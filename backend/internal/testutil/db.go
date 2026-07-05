@@ -19,6 +19,26 @@ func MigrationsDir() string {
 	return filepath.Join(filepath.Dir(file), "..", "..", "migrations")
 }
 
+func resetData(t *testing.T, ctx context.Context, pool *db.Pool) {
+	t.Helper()
+	_, err := pool.Exec(ctx, `
+		TRUNCATE TABLE
+			sync_events,
+			stock_balances,
+			stock_movements,
+			operations,
+			lots,
+			locations,
+			warehouses,
+			sku_barcodes,
+			skus
+		RESTART IDENTITY CASCADE
+	`)
+	if err != nil {
+		t.Fatalf("reset test data: %v", err)
+	}
+}
+
 // ConnectAndMigrate opens PostgreSQL and applies migrations. Skips when DATABASE_URL is unset.
 func ConnectAndMigrate(t *testing.T) (context.Context, *db.Pool) {
 	t.Helper()
@@ -35,5 +55,6 @@ func ConnectAndMigrate(t *testing.T) (context.Context, *db.Pool) {
 	if err := pool.RunMigrations(ctx, MigrationsDir()); err != nil {
 		t.Fatal(err)
 	}
+	resetData(t, ctx, pool)
 	return ctx, pool
 }
