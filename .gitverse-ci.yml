@@ -1,0 +1,45 @@
+# GitVerse CI for Sklad WMS
+
+stages:
+  - test
+  - build
+
+variables:
+  POSTGRES_DB: sklad_test
+  POSTGRES_USER: sklad
+  POSTGRES_PASSWORD: sklad
+  DATABASE_URL: postgres://sklad:sklad@postgres:5432/sklad_test?sslmode=disable
+
+test:backend:
+  stage: test
+  services:
+    - postgres:16-alpine
+  script:
+    - cd backend
+    - go test ./... -short -count=1
+    - go test ./... -tags=integration -count=1
+  variables:
+    POSTGRES_DB: sklad_test
+    POSTGRES_USER: sklad
+    POSTGRES_PASSWORD: sklad
+
+test:frontend:
+  stage: test
+  script:
+    - cd frontend && npm ci && npm test
+
+build:backend:
+  stage: build
+  script:
+    - cd backend && go build -o bin/api ./cmd/api && go build -o bin/migrate ./cmd/migrate
+  needs:
+    - test:backend
+    - test:frontend
+
+build:frontend:
+  stage: build
+  script:
+    - cd frontend && npm ci && npm run build
+  needs:
+    - test:backend
+    - test:frontend

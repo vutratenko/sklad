@@ -1,0 +1,14 @@
+.git
+.github
+.cursor
+**/.git
+**/node_modules
+frontend/dist
+backend/bin
+**/*.md
+!infra/helm/**/README.md
+**/.env
+**/.env.*
+**/coverage
+**/*.test
+agent-transcripts

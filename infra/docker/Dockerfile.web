@@ -1,0 +1,16 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+FROM nginx:alpine
+ARG VERSION=dev
+LABEL org.opencontainers.image.source="https://github.com/vutratenko/sklad" \
+      org.opencontainers.image.title="sklad-web" \
+      org.opencontainers.image.version="${VERSION}"
+
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY infra/docker/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

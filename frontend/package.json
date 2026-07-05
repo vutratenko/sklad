@@ -1,0 +1,18 @@
+{
+  "name": "sklad-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "echo 'no linter configured'"
+  },
+  "devDependencies": {
+    "vite": "^5.4.8",
+    "vite-plugin-pwa": "^0.20.5",
+    "vitest": "^2.1.8"
+  }
+}

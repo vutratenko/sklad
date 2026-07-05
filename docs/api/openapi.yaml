@@ -1,0 +1,216 @@
+openapi: 3.0.3
+info:
+  title: Sklad WMS API
+  version: 1.0.0
+  description: |
+    Полный перечень endpoints — docs/api/README.md.
+    Этот файл фиксирует sync-контракт и общие схемы (ADR-004, ADR-008).
+paths:
+  /api/v1/health:
+    get:
+      summary: Readiness probe
+      responses:
+        '200':
+          description: OK
+  /api/v1/movements:
+    post:
+      summary: Apply movement (online)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MovementRequest'
+      responses:
+        '201':
+          description: Applied
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Domain conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/barcodes/{barcode}:
+    get:
+      summary: Lookup SKU by barcode
+      parameters:
+        - name: barcode
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SKU and stocks
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/sync/push:
+    post:
+      summary: Batch offline operations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncPushRequest'
+      responses:
+        '200':
+          description: Per-operation results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPushResponse'
+  /api/v1/sync/pull:
+    get:
+      summary: Pull server changes
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPullResponse'
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error_code, message, request_id, timestamp]
+      properties:
+        error_code:
+          type: string
+          example: INSUFFICIENT_STOCK
+        message:
+          type: string
+        details:
+          type: object
+        request_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    MovementRequest:
+      type: object
+      required: [operation_type, device_id, operation_key, lines]
+      properties:
+        operation_type:
+          type: string
+          enum: [receipt, issue, transfer, adjustment]
+        reason_code:
+          type: string
+        device_id:
+          type: string
+        operation_key:
+          type: string
+        lines:
+          type: array
+          items:
+            type: object
+    SyncPushRequest:
+      type: object
+      required: [device_id, operations]
+      properties:
+        device_id:
+          type: string
+        batch_id:
+          type: string
+        schema_version:
+          type: integer
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncOperation'
+    SyncOperation:
+      type: object
+      required: [operation_id, entity, action, payload]
+      properties:
+        operation_id:
+          type: string
+        idempotency_key:
+          type: string
+        entity:
+          type: string
+          enum: [movement]
+        action:
+          type: string
+          enum: [create]
+        payload:
+          type: object
+        client_ts:
+          type: string
+    SyncPushResponse:
+      type: object
+      properties:
+        batch_id:
+          type: string
+        accepted_count:
+          type: integer
+        rejected_count:
+          type: integer
+        server_cursor:
+          type: integer
+          format: int64
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncOpResult'
+    SyncOpResult:
+      type: object
+      properties:
+        operation_id:
+          type: string
+        status:
+          type: string
+          enum: [applied, duplicate_replayed, rejected]
+        error_code:
+          type: string
+        message:
+          type: string
+        server_id:
+          type: string
+    SyncPullResponse:
+      type: object
+      properties:
+        from_cursor:
+          type: integer
+        to_cursor:
+          type: integer
+          format: int64
+        has_more:
+          type: boolean
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncEvent'
+    SyncEvent:
+      type: object
+      properties:
+        seq:
+          type: integer
+        entity_type:
+          type: string
+        entity_id:
+          type: string
+        action:
+          type: string
+        payload:
+          type: object
+        created_at:
+          type: string

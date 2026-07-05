@@ -1,0 +1,60 @@
+image:
+  api:
+    repository: ghcr.io/vutratenko/sklad-api
+    tag: ""
+    pullPolicy: IfNotPresent
+  web:
+    repository: ghcr.io/vutratenko/sklad-web
+    tag: ""
+    pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+api:
+  replicaCount: 1
+  existingSecret: sklad-api-secrets
+  env:
+    APP_ENV: production
+    HTTP_ADDR: ":8080"
+    AUTH_DEV_BYPASS: "false"
+    MEDIA_DIR: /data/media
+    MIGRATIONS_DIR: /migrations
+    OIDC_REDIRECT_URI: "https://sklad.example.com/oauth/callback"
+  resources: {}
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+
+web:
+  replicaCount: 1
+  resources: {}
+
+migrate:
+  enabled: true
+  backoffLimit: 3
+
+secrets:
+  create: false
+  databaseUrl: ""
+  oidcIssuerUrl: ""
+  oidcClientId: ""
+  oidcClientSecret: ""
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: sklad.example.com
+  tls: []
+
+service:
+  api:
+    type: ClusterIP
+    port: 8080
+  web:
+    type: ClusterIP
+    port: 80

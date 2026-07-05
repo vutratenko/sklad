@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#2563eb" />
+  <link rel="icon" href="/favicon.svg" />
+  <title>Sklad WMS</title>
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <h1>Sklad</h1>
+      <div class="status-bar">
+        <span id="user-status" class="badge">...</span>
+        <span id="network-status" class="badge">online</span>
+        <span id="sync-status" class="badge">sync: 0</span>
+      </div>
+    </header>
+    <nav class="nav">
+      <button data-view="home" class="nav-btn active">Главная</button>
+      <button data-view="stocks" class="nav-btn">Запасы</button>
+      <button data-view="movements" class="nav-btn">Движения</button>
+      <button data-view="warehouses" class="nav-btn">Склады</button>
+      <button data-view="skus" class="nav-btn">SKU</button>
+      <button data-view="scan" class="nav-btn">Скан</button>
+      <button data-view="sync" class="nav-btn">Sync</button>
+      <button data-view="login" class="nav-btn">Вход</button>
+    </nav>
+    <main id="main"></main>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

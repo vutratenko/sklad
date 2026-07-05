@@ -1,0 +1,127 @@
+:root {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --primary: #2563eb;
+  --danger: #dc2626;
+  --success: #16a34a;
+  --border: #e2e8f0;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.header h1 { margin: 0; font-size: 1.25rem; }
+
+.status-bar { display: flex; gap: 0.5rem; }
+
+.badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: var(--border);
+  text-transform: uppercase;
+}
+
+.badge.offline { background: var(--danger); color: white; }
+.badge.pending { background: #f59e0b; color: white; }
+
+.nav {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+}
+
+.nav-btn {
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.nav-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+#main { padding: 1rem; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.card h3 { margin: 0 0 0.25rem; }
+.card .meta { color: var(--muted); font-size: 0.875rem; }
+
+input, select, button.primary {
+  font: inherit;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+button.primary {
+  background: var(--primary);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.empty { color: var(--muted); text-align: center; padding: 2rem; }
+
+.sku-row { display: flex; gap: 0.75rem; align-items: flex-start; }
+.sku-photo {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sku-photo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  color: var(--muted);
+  background: var(--bg);
+}
+.sku-info { flex: 1; min-width: 0; }
+.barcodes-panel { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.scan-video {
+  width: 100%;
+  max-height: 240px;
+  margin-top: 0.75rem;
+  border-radius: 0.5rem;
+  background: #000;
+}
+.sync-error { color: var(--danger); }
