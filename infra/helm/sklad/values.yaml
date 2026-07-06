@@ -21,6 +21,8 @@ api:
     MEDIA_DIR: /data/media
     MIGRATIONS_DIR: /migrations
     OIDC_REDIRECT_URI: "https://sklad.example.com/oauth/callback"
+    OIDC_USERINFO_URL: ""
+    OIDC_USERINFO_HOST: ""
   resources: {}
   persistence:
     enabled: true

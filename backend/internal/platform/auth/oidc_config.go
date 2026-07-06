@@ -49,5 +49,9 @@ func NewValidator(cfg *config.Config) TokenValidator {
 		Issuer:   cfg.OIDCIssuer,
 		Audience: cfg.OIDCClientID,
 	})
-	return NewFallbackValidator(jwtValidator, NewNextcloudUserValidator(cfg.OIDCIssuer))
+	userInfoURL := cfg.OIDCUserInfoURL
+	if userInfoURL == "" {
+		userInfoURL = DefaultNextcloudUserURL(cfg.OIDCIssuer)
+	}
+	return NewFallbackValidator(jwtValidator, NewNextcloudUserValidator(userInfoURL, cfg.OIDCUserInfoHost))
 }

@@ -12,6 +12,7 @@ import (
 
 type NextcloudUserValidator struct {
 	userURL string
+	host    string
 	client  *http.Client
 }
 
@@ -29,9 +30,10 @@ type nextcloudUserResponse struct {
 	} `json:"ocs"`
 }
 
-func NewNextcloudUserValidator(issuer string) *NextcloudUserValidator {
+func NewNextcloudUserValidator(userURL, host string) *NextcloudUserValidator {
 	return &NextcloudUserValidator{
-		userURL: DefaultNextcloudUserURL(issuer),
+		userURL: userURL,
+		host:    host,
 		client:  &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -40,6 +42,9 @@ func (v *NextcloudUserValidator) Validate(ctx context.Context, rawToken string) 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.userURL, nil)
 	if err != nil {
 		return User{}, err
+	}
+	if v.host != "" {
+		req.Host = v.host
 	}
 	req.Header.Set("Authorization", "Bearer "+rawToken)
 	req.Header.Set("OCS-APIRequest", "true")

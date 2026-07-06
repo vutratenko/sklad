@@ -16,6 +16,9 @@ func TestNextcloudUserValidator_ValidAccessToken(t *testing.T) {
 		if r.URL.Query().Get("format") != "json" {
 			t.Fatalf("expected format=json, got %s", r.URL.RawQuery)
 		}
+		if r.Host != "cloud.example.test" {
+			t.Fatalf("unexpected host %q", r.Host)
+		}
 		if r.Header.Get("Authorization") != "Bearer opaque-token" {
 			t.Fatalf("unexpected auth header %q", r.Header.Get("Authorization"))
 		}
@@ -27,7 +30,7 @@ func TestNextcloudUserValidator_ValidAccessToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewNextcloudUserValidator(server.URL)
+	validator := NewNextcloudUserValidator(DefaultNextcloudUserURL(server.URL), "cloud.example.test")
 	user, err := validator.Validate(context.Background(), "opaque-token")
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -44,7 +47,7 @@ func TestNextcloudUserValidator_RejectedToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewNextcloudUserValidator(server.URL)
+	validator := NewNextcloudUserValidator(DefaultNextcloudUserURL(server.URL), "")
 	if _, err := validator.Validate(context.Background(), "bad-token"); err == nil {
 		t.Fatal("expected validation error")
 	}

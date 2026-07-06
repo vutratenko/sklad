@@ -8,16 +8,18 @@ import (
 )
 
 type Config struct {
-	AppEnv         string
-	HTTPAddr       string
-	DatabaseURL    string
-	AuthDevBypass  bool
-	OIDCIssuer     string
-	OIDCClientID   string
-	OIDCJWKSURL    string
-	OIDCRedirectURI string
-	IdempotencyTTL int // days
-	MediaDir       string
+	AppEnv           string
+	HTTPAddr         string
+	DatabaseURL      string
+	AuthDevBypass    bool
+	OIDCIssuer       string
+	OIDCClientID     string
+	OIDCJWKSURL      string
+	OIDCUserInfoURL  string
+	OIDCUserInfoHost string
+	OIDCRedirectURI  string
+	IdempotencyTTL   int // days
+	MediaDir         string
 }
 
 func (c *Config) DevBypassEnabled() bool {
@@ -35,16 +37,18 @@ func Load() (*Config, error) {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	cfg := &Config{
-		AppEnv:          viper.GetString("APP_ENV"),
-		HTTPAddr:        viper.GetString("HTTP_ADDR"),
-		DatabaseURL:     viper.GetString("DATABASE_URL"),
-		AuthDevBypass:   viper.GetBool("AUTH_DEV_BYPASS"),
-		OIDCIssuer:      viper.GetString("OIDC_ISSUER"),
-		OIDCClientID:    viper.GetString("OIDC_CLIENT_ID"),
-		OIDCJWKSURL:     viper.GetString("OIDC_JWKS_URL"),
-		OIDCRedirectURI: viper.GetString("OIDC_REDIRECT_URI"),
-		IdempotencyTTL:  viper.GetInt("IDEMPOTENCY_TTL_DAYS"),
-		MediaDir:        viper.GetString("MEDIA_DIR"),
+		AppEnv:           viper.GetString("APP_ENV"),
+		HTTPAddr:         viper.GetString("HTTP_ADDR"),
+		DatabaseURL:      viper.GetString("DATABASE_URL"),
+		AuthDevBypass:    viper.GetBool("AUTH_DEV_BYPASS"),
+		OIDCIssuer:       viper.GetString("OIDC_ISSUER"),
+		OIDCClientID:     viper.GetString("OIDC_CLIENT_ID"),
+		OIDCJWKSURL:      viper.GetString("OIDC_JWKS_URL"),
+		OIDCUserInfoURL:  viper.GetString("OIDC_USERINFO_URL"),
+		OIDCUserInfoHost: viper.GetString("OIDC_USERINFO_HOST"),
+		OIDCRedirectURI:  viper.GetString("OIDC_REDIRECT_URI"),
+		IdempotencyTTL:   viper.GetInt("IDEMPOTENCY_TTL_DAYS"),
+		MediaDir:         viper.GetString("MEDIA_DIR"),
 	}
 
 	if err := cfg.validate(); err != nil {
