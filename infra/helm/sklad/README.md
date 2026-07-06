@@ -20,7 +20,7 @@ kubectl create secret generic sklad-api-secrets \
   --from-literal=OIDC_CLIENT_SECRET='...'
 
 # Install chart
-helm install sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.0 \
+helm install sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.1 \
   --set api.existingSecret=sklad-api-secrets \
   --set ingress.enabled=true \
   --set ingress.host=sklad.example.com
@@ -29,7 +29,7 @@ helm install sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.0 \
 ## Upgrade
 
 ```bash
-helm upgrade sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.2.0 \
+helm upgrade sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.1 \
   --reuse-values
 ```
 

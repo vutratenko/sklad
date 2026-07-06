@@ -4,6 +4,12 @@ metadata:
   name: {{ include "sklad.fullname" . }}-api-config
   labels:
     {{- include "sklad.labels" . | nindent 4 }}
+  {{- if .Values.migrate.enabled }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+  {{- end }}
 data:
   {{- range $key, $value := .Values.api.env }}
   {{ $key }}: {{ $value | quote }}
