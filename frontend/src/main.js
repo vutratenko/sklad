@@ -726,6 +726,14 @@ function bindLocationHandlers(warehouseId) {
 }
 
 function renderLogin() {
+  if (currentUser) {
+    return `
+      <div class="card">
+        <h3>Вы вошли</h3>
+        <div class="meta">${escapeHtml(currentUser.name || currentUser.email || currentUser.id)}</div>
+        <button class="primary" id="logout">Выйти</button>
+      </div>`;
+  }
   if (authConfig?.dev_bypass) {
     return `
       <div class="card">
@@ -750,6 +758,13 @@ async function renderRoute(route) {
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.classList.toggle('active', routesMatch(btn.dataset.view, route.path));
   });
+
+  const publicRoute = route.path === '/' || route.path === '/login' || route.path === '/oauth/callback';
+  if (!publicRoute && !currentUser && !authConfig?.dev_bypass) {
+    main.innerHTML = renderLogin();
+    bindLoginHandlers();
+    return;
+  }
 
   if (route.path === '/oauth/callback') {
     main.innerHTML = renderOAuthCallback();
@@ -816,6 +831,16 @@ function bindLoginHandlers() {
   const oidcBtn = document.getElementById('login-oidc');
   if (oidcBtn) {
     oidcBtn.addEventListener('click', () => startLogin());
+  }
+  const logoutBtn = document.getElementById('logout');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+      logout();
+      currentUser = null;
+      updateUserStatus();
+      window.history.pushState({}, '', '/login');
+      renderRoute({ path: '/login' });
+    });
   }
 }
 
