@@ -45,8 +45,9 @@ func NewValidator(cfg *config.Config) TokenValidator {
 	if jwksURL == "" {
 		jwksURL = DefaultJWKSURL(cfg.OIDCIssuer)
 	}
-	return NewJWKSValidator(jwksURL, ValidatorOptions{
+	jwtValidator := NewJWKSValidator(jwksURL, ValidatorOptions{
 		Issuer:   cfg.OIDCIssuer,
 		Audience: cfg.OIDCClientID,
 	})
+	return NewFallbackValidator(jwtValidator, NewNextcloudUserValidator(cfg.OIDCIssuer))
 }

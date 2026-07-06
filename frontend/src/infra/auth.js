@@ -1,5 +1,14 @@
 const TOKEN_KEY = 'sklad_access_token';
 const AUTH_CONFIG_KEY = 'sklad_auth_config';
+const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+
+let tokenStorage = globalThis.localStorage;
+let now = () => Date.now();
+
+export function configureAuthStorageForTests(storage, clock = () => Date.now()) {
+  tokenStorage = storage;
+  now = clock;
+}
 
 export async function loadAuthConfig() {
   const cached = sessionStorage.getItem(AUTH_CONFIG_KEY);
@@ -16,14 +25,31 @@ export async function loadAuthConfig() {
 }
 
 export function getAccessToken() {
-  return sessionStorage.getItem(TOKEN_KEY);
+  const stored = tokenStorage?.getItem(TOKEN_KEY);
+  if (!stored) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(stored);
+    if (parsed.expires_at <= now()) {
+      tokenStorage.removeItem(TOKEN_KEY);
+      return null;
+    }
+    return parsed.token || null;
+  } catch {
+    tokenStorage.removeItem(TOKEN_KEY);
+    return null;
+  }
 }
 
 export function setAccessToken(token) {
   if (token) {
-    sessionStorage.setItem(TOKEN_KEY, token);
+    tokenStorage?.setItem(TOKEN_KEY, JSON.stringify({
+      token,
+      expires_at: now() + TOKEN_TTL_MS,
+    }));
   } else {
-    sessionStorage.removeItem(TOKEN_KEY);
+    tokenStorage?.removeItem(TOKEN_KEY);
   }
 }
 
