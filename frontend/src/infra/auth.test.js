@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   configureAuthStorageForTests,
+  callbackRedirectUri,
   getAccessToken,
+  hasOAuthCallback,
   selectAuthToken,
   setAccessToken,
 } from './auth.js';
@@ -16,12 +18,12 @@ function memoryStorage() {
 }
 
 describe('selectAuthToken', () => {
-  it('prefers OIDC id_token because the API validates JWTs', () => {
-    expect(selectAuthToken({ access_token: 'opaque-access', id_token: 'jwt-id' })).toBe('jwt-id');
+  it('prefers access_token because Nextcloud validates it through the OCS user endpoint', () => {
+    expect(selectAuthToken({ access_token: 'opaque-access', id_token: 'jwt-id' })).toBe('opaque-access');
   });
 
-  it('falls back to access_token for providers that return JWT access tokens', () => {
-    expect(selectAuthToken({ access_token: 'jwt-access' })).toBe('jwt-access');
+  it('falls back to id_token for providers that do not return an access token', () => {
+    expect(selectAuthToken({ id_token: 'jwt-id' })).toBe('jwt-id');
   });
 });
 
@@ -47,5 +49,19 @@ describe('access token storage', () => {
     currentTime += 366 * 24 * 60 * 60 * 1000;
 
     expect(getAccessToken()).toBeNull();
+  });
+});
+
+describe('OAuth callback helpers', () => {
+  it('detects authorization code on any route', () => {
+    expect(hasOAuthCallback('?state=&code=abc')).toBe(true);
+    expect(hasOAuthCallback('?state=abc')).toBe(false);
+  });
+
+  it('falls back to current callback URL when stored redirect is missing', () => {
+    expect(callbackRedirectUri(
+      { redirect_uri: 'https://sklad.example.com/oauth/callback' },
+      { origin: 'https://sklad.example.com', pathname: '/' },
+    )).toBe('https://sklad.example.com/');
   });
 });

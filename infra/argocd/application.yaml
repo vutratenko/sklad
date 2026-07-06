@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: oci://ghcr.io/vutratenko/charts
     chart: sklad
-    targetRevision: "0.1.6"
+    targetRevision: "0.1.7"
     helm:
       valuesObject:
         api:

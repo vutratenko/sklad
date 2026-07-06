@@ -1,5 +1,6 @@
 const TOKEN_KEY = 'sklad_access_token';
 const AUTH_CONFIG_KEY = 'sklad_auth_config';
+const REDIRECT_URI_KEY = 'sklad_oauth_redirect_uri';
 const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 let tokenStorage = globalThis.localStorage;
@@ -54,12 +55,28 @@ export function setAccessToken(token) {
 }
 
 export function selectAuthToken(tokenResponse) {
-  return tokenResponse?.id_token || tokenResponse?.access_token || '';
+  return tokenResponse?.access_token || tokenResponse?.id_token || '';
+}
+
+export function hasOAuthCallback(search = window.location.search) {
+  return Boolean(new URLSearchParams(search).get('code'));
+}
+
+export function callbackRedirectUri(config, location = window.location) {
+  const stored = globalThis.sessionStorage?.getItem(REDIRECT_URI_KEY);
+  if (stored) {
+    return stored;
+  }
+  if (location?.origin && location?.pathname) {
+    return `${location.origin}${location.pathname}`;
+  }
+  return config.redirect_uri || `${window.location.origin}/oauth/callback`;
 }
 
 export function logout() {
   setAccessToken(null);
   sessionStorage.removeItem(AUTH_CONFIG_KEY);
+  sessionStorage.removeItem(REDIRECT_URI_KEY);
 }
 
 function randomString(len = 64) {
@@ -87,6 +104,7 @@ export async function startLogin() {
   sessionStorage.setItem('pkce_verifier', verifier);
   const challenge = await sha256Base64Url(verifier);
   const redirectUri = config.redirect_uri || `${window.location.origin}/oauth/callback`;
+  sessionStorage.setItem(REDIRECT_URI_KEY, redirectUri);
   const params = new URLSearchParams({
     client_id: config.client_id,
     response_type: 'code',
@@ -100,12 +118,15 @@ export async function startLogin() {
 }
 
 export async function handleOAuthCallback(code) {
+  if (!code) {
+    throw new Error('missing authorization code');
+  }
   const config = await loadAuthConfig();
   const verifier = sessionStorage.getItem('pkce_verifier');
   if (!verifier) {
     throw new Error('missing PKCE verifier');
   }
-  const redirectUri = config.redirect_uri || `${window.location.origin}/oauth/callback`;
+  const redirectUri = callbackRedirectUri(config);
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
@@ -124,6 +145,7 @@ export async function handleOAuthCallback(code) {
   const data = await res.json();
   setAccessToken(selectAuthToken(data));
   sessionStorage.removeItem('pkce_verifier');
+  sessionStorage.removeItem(REDIRECT_URI_KEY);
   return data;
 }
 

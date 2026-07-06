@@ -22,7 +22,7 @@ import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue, lookupB
 import { startCameraScan } from './app/views/scan.js';
 import { ISSUE_REASONS, OPERATION_TYPES, submitMovement } from './app/views/movements.js';
 import { SyncEngine, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
-import { ensureAuth, handleOAuthCallback, loadAuthConfig, logout, startLogin } from './infra/auth.js';
+import { ensureAuth, handleOAuthCallback, hasOAuthCallback, loadAuthConfig, logout, startLogin } from './infra/auth.js';
 
 const main = document.getElementById('main');
 const networkStatus = document.getElementById('network-status');
@@ -759,14 +759,7 @@ async function renderRoute(route) {
     btn.classList.toggle('active', routesMatch(btn.dataset.view, route.path));
   });
 
-  const publicRoute = route.path === '/' || route.path === '/login' || route.path === '/oauth/callback';
-  if (!publicRoute && !currentUser && !authConfig?.dev_bypass) {
-    main.innerHTML = renderLogin();
-    bindLoginHandlers();
-    return;
-  }
-
-  if (route.path === '/oauth/callback') {
+  if (route.path === '/oauth/callback' || hasOAuthCallback()) {
     main.innerHTML = renderOAuthCallback();
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
@@ -779,6 +772,13 @@ async function renderRoute(route) {
     } catch (err) {
       main.innerHTML = `<p class="empty">${escapeHtml(err.message)}</p>`;
     }
+    return;
+  }
+
+  const publicRoute = route.path === '/' || route.path === '/login' || route.path === '/oauth/callback';
+  if (!publicRoute && !currentUser && !authConfig?.dev_bypass) {
+    main.innerHTML = renderLogin();
+    bindLoginHandlers();
     return;
   }
 
