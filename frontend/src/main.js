@@ -657,9 +657,12 @@ function bindWarehouseHandlers() {
 }
 
 function renderHome() {
-  const authInfo = authConfig?.dev_bypass
-    ? 'Режим разработки: auth bypass активен (ADR-007).'
-    : 'Nextcloud OIDC: используйте кнопку «Войти».';
+  let authInfo = 'Nextcloud OIDC: используйте кнопку «Войти».';
+  if (currentUser) {
+    authInfo = 'Вы вошли через Nextcloud OIDC.';
+  } else if (authConfig?.dev_bypass) {
+    authInfo = 'Режим разработки: auth bypass активен (ADR-007).';
+  }
   return `
     <div class="card">
       <h3>Sklad WMS</h3>

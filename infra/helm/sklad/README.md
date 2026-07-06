@@ -20,7 +20,7 @@ kubectl create secret generic sklad-api-secrets \
   --from-literal=OIDC_CLIENT_SECRET='...'
 
 # Install chart
-helm install sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.2 \
+helm install sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.3 \
   --set api.existingSecret=sklad-api-secrets \
   --set ingress.enabled=true \
   --set ingress.host=sklad.example.com
@@ -29,7 +29,7 @@ helm install sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.2 \
 ## Upgrade
 
 ```bash
-helm upgrade sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.2 \
+helm upgrade sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.3 \
   --reuse-values
 ```
 
@@ -38,8 +38,8 @@ Database migrations run automatically via a Helm pre-install/pre-upgrade Job (`/
 ## Docker images
 
 ```bash
-docker pull ghcr.io/vutratenko/sklad-api:0.1.2
-docker pull ghcr.io/vutratenko/sklad-web:0.1.2
+docker pull ghcr.io/vutratenko/sklad-api:0.1.3
+docker pull ghcr.io/vutratenko/sklad-web:0.1.3
 ```
 
 ## Key values

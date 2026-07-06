@@ -27,6 +27,10 @@ export function setAccessToken(token) {
   }
 }
 
+export function selectAuthToken(tokenResponse) {
+  return tokenResponse?.id_token || tokenResponse?.access_token || '';
+}
+
 export function logout() {
   setAccessToken(null);
   sessionStorage.removeItem(AUTH_CONFIG_KEY);
@@ -92,7 +96,7 @@ export async function handleOAuthCallback(code) {
     throw new Error('token exchange failed');
   }
   const data = await res.json();
-  setAccessToken(data.access_token);
+  setAccessToken(selectAuthToken(data));
   sessionStorage.removeItem('pkce_verifier');
   return data;
 }
