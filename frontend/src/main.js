@@ -1,5 +1,6 @@
 import { initRouter } from './app/router.js';
 import { movementFieldVisibility } from './app/movement-fields.js';
+import { stockedWarehouses } from './app/home.js';
 import { isNavViewVisible } from './app/navigation.js';
 import {
   createLocation,
@@ -350,6 +351,15 @@ function bindMovementsHandlers() {
   document.getElementById('mv-filter-sku')?.addEventListener('change', applyFilters);
 }
 
+async function refreshHomePage() {
+  const [stocks, warehouses] = await Promise.all([
+    loadStocksView(),
+    loadWarehouses(true),
+  ]);
+  main.innerHTML = renderHome(stockedWarehouses(stocks, warehouses));
+  bindHomeHandlers();
+}
+
 function renderSKUs(items) {
   const list = items.map((s) => `
     <div class="card sku-card" data-sku-id="${s.id}">
@@ -645,20 +655,39 @@ function bindWarehouseHandlers() {
   });
 }
 
-function renderHome() {
+function renderHome(warehouseChips = []) {
   let authInfo = 'Nextcloud OIDC: используйте кнопку «Войти».';
   if (currentUser) {
     authInfo = 'Вы вошли через Nextcloud OIDC.';
   } else if (authConfig?.dev_bypass) {
     authInfo = 'Режим разработки: auth bypass активен (ADR-007).';
   }
+  const chips = warehouseChips.map((warehouse) => `
+    <a class="chip-link" href="/stocks" data-action="home-stock-wh" data-warehouse-id="${escapeHtml(warehouse.id)}">
+      ${escapeHtml(warehouse.name)}
+    </a>
+  `).join('');
   return `
     <div class="card">
       <h3>Sklad WMS</h3>
       <div class="meta">${authInfo}</div>
       ${currentUser ? `<div class="meta">Пользователь: ${escapeHtml(currentUser.name || currentUser.id)}</div>` : ''}
     </div>
+    <div class="card">
+      <h3>Склады с остатками</h3>
+      ${chips ? `<div class="chip-list">${chips}</div>` : '<p class="empty">Нет складов с остатками</p>'}
+    </div>
   `;
+}
+
+function bindHomeHandlers() {
+  main.querySelectorAll('[data-action="home-stock-wh"]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      sessionStorage.setItem('sklad_stock_filters', JSON.stringify({ warehouse_id: link.dataset.warehouseId }));
+      router?.navigate('/stocks');
+    });
+  });
 }
 
 function renderLocationsPanel(warehouseId, locs) {
@@ -788,7 +817,8 @@ async function renderRoute(route) {
         bindWarehouseHandlers();
       });
     } else if (route.path === '/') {
-      main.innerHTML = renderHome();
+      await refreshHomePage();
+      refreshDataInBackground(refreshHomePage);
     } else if (route.path === '/stocks') {
       const pending = readPendingFilters('sklad_stock_filters');
       await refreshStocksPage(pending);

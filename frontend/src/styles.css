@@ -104,6 +104,7 @@ select {
 
 button,
 label.nav-btn,
+.chip-link,
 input,
 select {
   transition:
@@ -231,6 +232,34 @@ label.nav-btn:focus-within {
 .badge.pending {
   border-color: var(--color-warning);
   color: var(--color-warning);
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.32rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-control);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.1;
+  text-decoration: none;
+}
+
+.chip-link:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-3);
+  color: var(--color-primary-hover);
 }
 
 .nav {
