@@ -74,7 +74,7 @@ async function refreshStocksPage(filters = {}) {
     loadWarehouses(true),
   ]);
   main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters);
-  bindStocksHandlers({ filters, skus, locations });
+  bindStocksHandlers({ filters, skus, locations, stocks });
 }
 
 async function refreshMovementsPage(filters = {}) {
@@ -187,7 +187,7 @@ function renderStocksPage(stocks, skus, locations, warehouses, filters = {}) {
 
   return `
     <div class="card movement-wizard-card">
-      ${renderMovementWizard(skus, locations)}
+      ${renderMovementWizard(skus, locations, stocks)}
     </div>
     <div class="card">
       <h3>Остатки</h3>
@@ -240,15 +240,16 @@ async function submitStockMovement(data, resultEl) {
     loadWarehouses(true),
   ]);
   main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters);
-  bindStocksHandlers({ filters, skus, locations });
+  bindStocksHandlers({ filters, skus, locations, stocks });
 }
 
-function bindStocksHandlers({ filters: initialFilters = {}, skus = [], locations = [] } = {}) {
+function bindStocksHandlers({ filters: initialFilters = {}, skus = [], locations = [], stocks = [] } = {}) {
   const wizardRoot = document.getElementById('movement-wizard');
   if (wizardRoot) {
     bindMovementWizard(wizardRoot, {
       skus,
       locations,
+      stocks,
       initialSkuId: initialFilters.sku_id,
       onSubmit: submitStockMovement,
     });

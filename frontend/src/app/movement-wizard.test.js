@@ -3,6 +3,8 @@ import {
   categoryLabel,
   collectCategories,
   filterSkusByCategory,
+  fromLocationsNeedStockFilter,
+  locationsWithSkuStock,
   searchSkus,
 } from './movement-wizard.js';
 
@@ -33,5 +35,28 @@ describe('movement wizard helpers', () => {
     expect(searchSkus(skus, 'бакалея').map((s) => s.id)).toEqual(['sku-2']);
     expect(searchSkus(skus, '4601').map((s) => s.id)).toEqual(['sku-1']);
     expect(searchSkus(skus, 'архив')).toEqual([]);
+  });
+
+  it('limits from locations to places with sku stock', () => {
+    const stocks = [
+      { sku_id: 'sku-1', location_id: 'loc-1', quantity: 3 },
+      { sku_id: 'sku-1', location_id: 'loc-2', quantity: 0 },
+      { sku_id: 'sku-2', location_id: 'loc-1', quantity: 5 },
+      { sku_id: 'sku-1', location_id: 'loc-1', quantity: 2 },
+    ];
+    const locations = [
+      { id: 'loc-1', warehouse_name: 'Кухня', name: 'Полка 1' },
+      { id: 'loc-2', warehouse_name: 'Кухня', name: 'Полка 2' },
+      { id: 'loc-3', warehouse_name: 'Архив', name: 'Стеллаж' },
+    ];
+
+    expect(locationsWithSkuStock(stocks, locations, 'sku-1')).toEqual([
+      { id: 'loc-1', warehouse_name: 'Кухня', name: 'Полка 1', stockQuantity: 5 },
+    ]);
+    expect(fromLocationsNeedStockFilter('issue')).toBe(true);
+    expect(fromLocationsNeedStockFilter('transfer')).toBe(true);
+    expect(fromLocationsNeedStockFilter('adjustment', 'decrease')).toBe(true);
+    expect(fromLocationsNeedStockFilter('adjustment', 'increase')).toBe(false);
+    expect(fromLocationsNeedStockFilter('receipt')).toBe(false);
   });
 });

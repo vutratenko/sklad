@@ -23,6 +23,7 @@ let wizardState = defaultState();
 let wizardOnSubmit = null;
 let wizardSkus = [];
 let wizardLocations = [];
+let wizardStocks = [];
 
 export function getWizardState() {
   return { ...wizardState };
@@ -73,6 +74,36 @@ export function searchSkus(skus, query) {
     .slice(0, 8);
 }
 
+export function fromLocationsNeedStockFilter(operationType, adjustmentDirection = 'increase') {
+  if (operationType === 'issue' || operationType === 'transfer') return true;
+  if (operationType === 'adjustment' && adjustmentDirection === 'decrease') return true;
+  return false;
+}
+
+export function locationsWithSkuStock(stocks, locations, skuId) {
+  if (!skuId) return [];
+
+  const quantityByLocation = new Map();
+  for (const stock of stocks) {
+    if (stock.sku_id !== skuId || !stock.location_id) continue;
+    const qty = Number(stock.quantity || 0);
+    if (qty <= 0) continue;
+    quantityByLocation.set(
+      stock.location_id,
+      (quantityByLocation.get(stock.location_id) || 0) + qty,
+    );
+  }
+
+  return locations
+    .filter((loc) => quantityByLocation.has(loc.id))
+    .map((loc) => ({ ...loc, stockQuantity: quantityByLocation.get(loc.id) }))
+    .sort((a, b) => {
+      const byWarehouse = (a.warehouse_name || '').localeCompare(b.warehouse_name || '', 'ru', { sensitivity: 'base' });
+      if (byWarehouse !== 0) return byWarehouse;
+      return (a.name || '').localeCompare(b.name || '', 'ru', { sensitivity: 'base' });
+    });
+}
+
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
@@ -90,10 +121,21 @@ function renderSkuPhoto(sku) {
   return '<div class="pick-photo pick-photo-empty">—</div>';
 }
 
-function renderLocationOptions(locations) {
+function renderLocationOptions(locations, { withQuantity = false } = {}) {
   return locations
-    .map((loc) => `<option value="${escapeHtml(loc.id)}">${escapeHtml(loc.warehouse_name)} / ${escapeHtml(loc.name)}</option>`)
+    .map((loc) => {
+      const label = `${loc.warehouse_name} / ${loc.name}`;
+      const qtySuffix = withQuantity && loc.stockQuantity != null ? ` (${loc.stockQuantity} шт)` : '';
+      return `<option value="${escapeHtml(loc.id)}">${escapeHtml(label)}${escapeHtml(qtySuffix)}</option>`;
+    })
     .join('');
+}
+
+function resolveFromLocations(stocks, locations, skuId, operationType, adjustmentDirection) {
+  if (fromLocationsNeedStockFilter(operationType, adjustmentDirection)) {
+    return locationsWithSkuStock(stocks, locations, skuId);
+  }
+  return locations;
 }
 
 function renderReasonOptions() {
@@ -181,13 +223,17 @@ function renderSkuStep(skus) {
   `;
 }
 
-function renderDetailsStep(skus, locations) {
+function renderDetailsStep(skus, locations, stocks) {
   const sku = skus.find((item) => item.id === wizardState.skuId);
   if (!sku) return '';
 
   const type = wizardState.operationType || 'receipt';
   const visibility = movementFieldVisibility(type, 'increase');
-  const locOptions = renderLocationOptions(locations);
+  const fromLocations = resolveFromLocations(stocks, locations, sku.id, type, 'increase');
+  const fromOptions = renderLocationOptions(fromLocations, {
+    withQuantity: fromLocationsNeedStockFilter(type, 'increase'),
+  });
+  const toOptions = renderLocationOptions(locations);
 
   return `
     <div class="movement-wizard-step" data-wizard-step="details">
@@ -222,11 +268,11 @@ function renderDetailsStep(skus, locations) {
         </div>
         <div class="form-row" id="mv-from-row"${visibility.from ? '' : ' hidden'}>
           <label>Откуда</label>
-          <select id="mv-from"><option value="">—</option>${locOptions}</select>
+          <select id="mv-from"><option value="">—</option>${fromOptions}</select>
         </div>
         <div class="form-row" id="mv-to-row"${visibility.to ? '' : ' hidden'}>
           <label>Куда</label>
-          <select id="mv-to"><option value="">—</option>${locOptions}</select>
+          <select id="mv-to"><option value="">—</option>${toOptions}</select>
         </div>
         <button class="primary" id="mv-submit" type="button">Провести</button>
         <div id="mv-result" class="meta movement-wizard-result"></div>
@@ -235,16 +281,16 @@ function renderDetailsStep(skus, locations) {
   `;
 }
 
-function renderActiveStep(skus, locations) {
+function renderActiveStep(skus, locations, stocks) {
   if (!wizardState.expanded) return '';
   if (wizardState.step === 'type') return renderTypeStep();
   if (wizardState.step === 'category') return renderCategoryStep(skus);
   if (wizardState.step === 'sku') return renderSkuStep(skus);
-  if (wizardState.step === 'details') return renderDetailsStep(skus, locations);
+  if (wizardState.step === 'details') return renderDetailsStep(skus, locations, stocks);
   return '';
 }
 
-export function renderMovementWizard(skus, locations) {
+export function renderMovementWizard(skus, locations, stocks = []) {
   return `
     <div class="movement-wizard" id="movement-wizard">
       <button type="button" class="movement-wizard-toggle" id="movement-wizard-toggle" aria-expanded="${wizardState.expanded ? 'true' : 'false'}">
@@ -252,13 +298,29 @@ export function renderMovementWizard(skus, locations) {
         <span class="movement-wizard-chevron" aria-hidden="true"></span>
       </button>
       <div class="movement-wizard-body"${wizardState.expanded ? '' : ' hidden'}>
-        ${renderActiveStep(skus, locations)}
+        ${renderActiveStep(skus, locations, stocks)}
       </div>
     </div>
   `;
 }
 
-function updateDetailsVisibility(root) {
+function updateFromLocationOptions(root, stocks, locations) {
+  const type = wizardState.operationType || 'receipt';
+  const adjustmentDirection = root.querySelector('#mv-adj-dir')?.value || 'increase';
+  const fromSelect = root.querySelector('#mv-from');
+  if (!fromSelect) return;
+
+  const fromLocations = resolveFromLocations(stocks, locations, wizardState.skuId, type, adjustmentDirection);
+  const selected = fromSelect.value;
+  fromSelect.innerHTML = `<option value="">—</option>${renderLocationOptions(fromLocations, {
+    withQuantity: fromLocationsNeedStockFilter(type, adjustmentDirection),
+  })}`;
+  if (selected && fromLocations.some((loc) => loc.id === selected)) {
+    fromSelect.value = selected;
+  }
+}
+
+function updateDetailsVisibility(root, stocks, locations) {
   const type = wizardState.operationType || 'receipt';
   const adjustmentDirection = root.querySelector('#mv-adj-dir')?.value || 'increase';
   const visibility = movementFieldVisibility(type, adjustmentDirection);
@@ -266,22 +328,24 @@ function updateDetailsVisibility(root) {
   root.querySelector('#mv-adj-row')?.toggleAttribute('hidden', !visibility.adjustment);
   root.querySelector('#mv-from-row')?.toggleAttribute('hidden', !visibility.from);
   root.querySelector('#mv-to-row')?.toggleAttribute('hidden', !visibility.to);
+  updateFromLocationOptions(root, stocks, locations);
 }
 
-function rerenderWizard(root, skus, locations) {
+function rerenderWizard(root, skus, locations, stocks = wizardStocks) {
   const body = root.querySelector('.movement-wizard-body');
   const toggle = root.querySelector('#movement-wizard-toggle');
   if (!body || !toggle) return;
   toggle.setAttribute('aria-expanded', wizardState.expanded ? 'true' : 'false');
   body.hidden = !wizardState.expanded;
-  body.innerHTML = renderActiveStep(skus, locations);
-  bindWizardStepHandlers(root, skus, locations);
+  body.innerHTML = renderActiveStep(skus, locations, stocks);
+  bindWizardStepHandlers(root, skus, locations, stocks);
 }
 
-export function bindMovementWizard(root, { skus, locations, onSubmit, initialSkuId }) {
+export function bindMovementWizard(root, { skus, locations, stocks = [], onSubmit, initialSkuId }) {
   wizardOnSubmit = onSubmit;
   wizardSkus = skus;
   wizardLocations = locations;
+  wizardStocks = stocks;
 
   if (initialSkuId && !wizardState.skuId) {
     const sku = skus.find((item) => item.id === initialSkuId);
@@ -301,14 +365,14 @@ export function bindMovementWizard(root, { skus, locations, onSubmit, initialSku
     root.dataset.bound = 'true';
     root.querySelector('#movement-wizard-toggle')?.addEventListener('click', () => {
       wizardState.expanded = !wizardState.expanded;
-      rerenderWizard(root, wizardSkus, wizardLocations);
+      rerenderWizard(root, wizardSkus, wizardLocations, wizardStocks);
     });
   }
 
-  rerenderWizard(root, skus, locations);
+  rerenderWizard(root, skus, locations, stocks);
 }
 
-function bindWizardStepHandlers(root, skus, locations) {
+function bindWizardStepHandlers(root, skus, locations, stocks = wizardStocks) {
   const onSubmit = wizardOnSubmit;
   root.querySelectorAll('[data-action="wizard-pick-type"]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -317,7 +381,7 @@ function bindWizardStepHandlers(root, skus, locations) {
       wizardState.category = null;
       wizardState.skuId = null;
       wizardState.searchQuery = '';
-      rerenderWizard(root, skus, locations);
+      rerenderWizard(root, skus, locations, stocks);
     });
   });
 
@@ -327,7 +391,7 @@ function bindWizardStepHandlers(root, skus, locations) {
       wizardState.step = 'sku';
       wizardState.skuId = null;
       wizardState.searchQuery = '';
-      rerenderWizard(root, skus, locations);
+      rerenderWizard(root, skus, locations, stocks);
     });
   });
 
@@ -338,7 +402,7 @@ function bindWizardStepHandlers(root, skus, locations) {
       wizardState.category = categoryLabel(sku?.category);
       wizardState.step = 'details';
       wizardState.searchQuery = '';
-      rerenderWizard(root, skus, locations);
+      rerenderWizard(root, skus, locations, stocks);
     });
   });
 
@@ -355,7 +419,7 @@ function bindWizardStepHandlers(root, skus, locations) {
         wizardState.operationType = null;
       }
       wizardState.searchQuery = '';
-      rerenderWizard(root, skus, locations);
+      rerenderWizard(root, skus, locations, stocks);
     });
   });
 
@@ -387,14 +451,14 @@ function bindWizardStepHandlers(root, skus, locations) {
             wizardState.category = categoryLabel(sku?.category);
             wizardState.step = 'details';
             wizardState.searchQuery = '';
-            rerenderWizard(root, skus, locations);
+            rerenderWizard(root, skus, locations, stocks);
           });
         });
       }
     }
   });
 
-  root.querySelector('#mv-adj-dir')?.addEventListener('change', () => updateDetailsVisibility(root));
+  root.querySelector('#mv-adj-dir')?.addEventListener('change', () => updateDetailsVisibility(root, stocks, locations));
   root.querySelector('#mv-submit')?.addEventListener('click', async () => {
     if (!onSubmit) return;
     const resultEl = root.querySelector('#mv-result');
@@ -440,7 +504,7 @@ function bindWizardStepHandlers(root, skus, locations) {
     try {
       await onSubmit(data, resultEl);
       resetWizardState();
-      rerenderWizard(root, skus, locations);
+      rerenderWizard(root, skus, locations, stocks);
     } catch (err) {
       if (resultEl) resultEl.textContent = err.message;
     }
