@@ -19,6 +19,8 @@ type Config struct {
 	OIDCUserInfoURL  string
 	OIDCUserInfoHost string
 	OIDCRedirectURI  string
+	SessionSecret    string
+	SessionTTLDays   int
 	IdempotencyTTL   int // days
 	MediaDir         string
 }
@@ -31,6 +33,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("APP_ENV", "development")
 	viper.SetDefault("HTTP_ADDR", ":8080")
 	viper.SetDefault("AUTH_DEV_BYPASS", false)
+	viper.SetDefault("SESSION_TTL_DAYS", 365)
 	viper.SetDefault("IDEMPOTENCY_TTL_DAYS", 30)
 	viper.SetDefault("MEDIA_DIR", "./data/media")
 
@@ -42,13 +45,15 @@ func Load() (*Config, error) {
 		HTTPAddr:         viper.GetString("HTTP_ADDR"),
 		DatabaseURL:      viper.GetString("DATABASE_URL"),
 		AuthDevBypass:    viper.GetBool("AUTH_DEV_BYPASS"),
-		OIDCIssuer:       viper.GetString("OIDC_ISSUER"),
+		OIDCIssuer:       firstNonEmpty(viper.GetString("OIDC_ISSUER"), viper.GetString("OIDC_ISSUER_URL")),
 		OIDCClientID:     viper.GetString("OIDC_CLIENT_ID"),
 		OIDCClientSecret: viper.GetString("OIDC_CLIENT_SECRET"),
 		OIDCJWKSURL:      viper.GetString("OIDC_JWKS_URL"),
 		OIDCUserInfoURL:  viper.GetString("OIDC_USERINFO_URL"),
 		OIDCUserInfoHost: viper.GetString("OIDC_USERINFO_HOST"),
 		OIDCRedirectURI:  viper.GetString("OIDC_REDIRECT_URI"),
+		SessionSecret:    viper.GetString("SESSION_SECRET"),
+		SessionTTLDays:   viper.GetInt("SESSION_TTL_DAYS"),
 		IdempotencyTTL:   viper.GetInt("IDEMPOTENCY_TTL_DAYS"),
 		MediaDir:         viper.GetString("MEDIA_DIR"),
 	}
@@ -57,6 +62,15 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (c *Config) validate() error {
@@ -69,6 +83,12 @@ func (c *Config) validate() error {
 	if !c.DevBypassEnabled() {
 		if c.OIDCIssuer == "" || c.OIDCClientID == "" {
 			return fmt.Errorf("OIDC_ISSUER and OIDC_CLIENT_ID are required when dev bypass is disabled")
+		}
+		if c.SessionSecret == "" {
+			return fmt.Errorf("SESSION_SECRET is required when dev bypass is disabled")
+		}
+		if c.SessionTTLDays <= 0 {
+			return fmt.Errorf("SESSION_TTL_DAYS must be positive")
 		}
 	}
 	return nil

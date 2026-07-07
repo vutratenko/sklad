@@ -844,8 +844,8 @@ function bindLoginHandlers() {
   }
   const logoutBtn = document.getElementById('logout');
   if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
-      logout();
+    logoutBtn.addEventListener('click', async () => {
+      await logout();
       currentUser = null;
       updateUserStatus();
       window.history.pushState({}, '', '/login');

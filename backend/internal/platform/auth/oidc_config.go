@@ -13,6 +13,11 @@ import (
 
 const LocalTokenEndpoint = "/api/v1/auth/oidc/token"
 
+type OIDCSessionResponse struct {
+	User      User   `json:"user"`
+	ExpiresAt string `json:"expires_at"`
+}
+
 type OIDCConfigResponse struct {
 	DevBypass             bool   `json:"dev_bypass"`
 	Issuer                string `json:"issuer,omitempty"`
@@ -45,9 +50,15 @@ func OIDCConfigHandler(cfg *config.Config) http.HandlerFunc {
 
 func OIDCTokenHandler(cfg *config.Config) http.HandlerFunc {
 	client := &http.Client{Timeout: 10 * time.Second}
+	sessionManager := NewSessionManagerFromConfig(cfg)
+	validator := NewValidator(cfg)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if cfg.DevBypassEnabled() {
 			httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "oidc is disabled"})
+			return
+		}
+		if sessionManager == nil {
+			httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "session is not configured"})
 			return
 		}
 		if err := r.ParseForm(); err != nil {
@@ -101,8 +112,51 @@ func OIDCTokenHandler(cfg *config.Config) http.HandlerFunc {
 			httpx.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "token exchange failed"})
 			return
 		}
-		httpx.WriteJSON(w, http.StatusOK, body)
+		rawToken := authTokenFromProviderResponse(body)
+		if rawToken == "" || validator == nil {
+			httpx.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "token provider response is missing a usable token"})
+			return
+		}
+		user, err := validator.Validate(r.Context(), rawToken)
+		if err != nil {
+			httpx.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "token validation failed"})
+			return
+		}
+		expiresAt, err := sessionManager.SetCookie(w, user)
+		if err != nil {
+			httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "session creation failed"})
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, OIDCSessionResponse{
+			User:      user,
+			ExpiresAt: expiresAt.Format(time.RFC3339),
+		})
 	}
+}
+
+func LogoutHandler(sessionManager *SessionManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if sessionManager != nil {
+			sessionManager.ClearCookie(w)
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
+}
+
+func NewSessionManagerFromConfig(cfg *config.Config) *SessionManager {
+	if cfg.DevBypassEnabled() {
+		return nil
+	}
+	return NewSessionManager(cfg.SessionSecret, time.Duration(cfg.SessionTTLDays)*24*time.Hour, cfg.AppEnv == "production")
+}
+
+func authTokenFromProviderResponse(body map[string]any) string {
+	for _, key := range []string{"access_token", "id_token"} {
+		if token, ok := body[key].(string); ok && strings.TrimSpace(token) != "" {
+			return token
+		}
+	}
+	return ""
 }
 
 func NewValidator(cfg *config.Config) TokenValidator {

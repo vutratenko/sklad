@@ -91,6 +91,7 @@ export function logout() {
   setAccessToken(null);
   sessionStorage.removeItem(AUTH_CONFIG_KEY);
   sessionStorage.removeItem(REDIRECT_URI_KEY);
+  return fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => null);
 }
 
 function randomString(len = 64) {
@@ -157,7 +158,7 @@ export async function handleOAuthCallback(code) {
     throw new Error('token exchange failed');
   }
   const data = await res.json();
-  setAccessToken(selectAuthToken(data));
+  setAccessToken(null);
   sessionStorage.removeItem('pkce_verifier');
   sessionStorage.removeItem(REDIRECT_URI_KEY);
   return data;
@@ -181,10 +182,11 @@ export async function ensureAuth() {
   if (config.dev_bypass) {
     return fetchCurrentUser();
   }
-  if (!getAccessToken()) {
+  try {
+    return await fetchCurrentUser();
+  } catch {
     return null;
   }
-  return fetchCurrentUser();
 }
 
 export function authHeaders() {

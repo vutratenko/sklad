@@ -70,6 +70,36 @@ func TestLoad_OIDCRequiredWithoutDevBypass(t *testing.T) {
 	}
 }
 
+func TestLoad_SessionSecretRequiredWithoutDevBypass(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/sklad?sslmode=disable")
+	t.Setenv("APP_ENV", "staging")
+	t.Setenv("AUTH_DEV_BYPASS", "false")
+	t.Setenv("OIDC_ISSUER", "https://cloud.test")
+	t.Setenv("OIDC_CLIENT_ID", "sklad-client")
+	t.Setenv("SESSION_SECRET", "")
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error when SESSION_SECRET is empty")
+	}
+}
+
+func TestLoad_AcceptsLegacyOIDCIssuerURL(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/sklad?sslmode=disable")
+	t.Setenv("APP_ENV", "staging")
+	t.Setenv("AUTH_DEV_BYPASS", "false")
+	t.Setenv("OIDC_ISSUER", "")
+	t.Setenv("OIDC_ISSUER_URL", "https://cloud.test")
+	t.Setenv("OIDC_CLIENT_ID", "sklad-client")
+	t.Setenv("SESSION_SECRET", "secret")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.OIDCIssuer != "https://cloud.test" {
+		t.Fatalf("unexpected issuer %q", cfg.OIDCIssuer)
+	}
+}
+
 func TestLoad_DevBypassSkipsOIDCRequirement(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/sklad?sslmode=disable")
 	t.Setenv("APP_ENV", "development")

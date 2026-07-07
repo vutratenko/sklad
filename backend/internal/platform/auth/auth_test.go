@@ -192,21 +192,29 @@ func TestOIDCConfigHandler_ReturnsLocalTokenEndpoint(t *testing.T) {
 	}
 }
 
-func TestOIDCTokenHandler_ExchangesCodeThroughProvider(t *testing.T) {
+func TestOIDCTokenHandler_ExchangesCodeAndCreatesAppSession(t *testing.T) {
 	var got url.Values
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/apps/oauth2/api/v1/token" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/apps/oauth2/api/v1/token":
+			if r.Method != http.MethodPost {
+				t.Fatalf("unexpected method %s", r.Method)
+			}
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			got = r.Form
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"opaque-access","token_type":"Bearer"}`))
+		case "/ocs/v2.php/cloud/user":
+			if r.Header.Get("Authorization") != "Bearer opaque-access" {
+				t.Fatalf("unexpected user info auth header %q", r.Header.Get("Authorization"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ocs":{"meta":{"statuscode":100},"data":{"id":"user-42","displayname":"Test User","email":"user@example.com"}}}`))
+		default:
+			http.NotFound(w, r)
 		}
-		if r.Method != http.MethodPost {
-			t.Fatalf("unexpected method %s", r.Method)
-		}
-		if err := r.ParseForm(); err != nil {
-			t.Fatal(err)
-		}
-		got = r.Form
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"access_token":"opaque-access","token_type":"Bearer"}`))
 	}))
 	defer provider.Close()
 
@@ -215,6 +223,8 @@ func TestOIDCTokenHandler_ExchangesCodeThroughProvider(t *testing.T) {
 		OIDCIssuer:       provider.URL,
 		OIDCClientID:     "sklad-client",
 		OIDCClientSecret: "client-secret",
+		SessionSecret:    "test-session-secret",
+		SessionTTLDays:   365,
 	}
 	form := url.Values{
 		"code":          {"auth-code"},
@@ -236,11 +246,14 @@ func TestOIDCTokenHandler_ExchangesCodeThroughProvider(t *testing.T) {
 	if got.Get("client_id") != "sklad-client" || got.Get("code") != "auth-code" || got.Get("code_verifier") != "pkce-verifier" {
 		t.Fatalf("unexpected provider form: %v", got)
 	}
-	var body map[string]string
+	if cookie := rec.Result().Cookies(); len(cookie) != 1 || cookie[0].Name != SessionCookieName {
+		t.Fatalf("expected %s cookie, got %#v", SessionCookieName, cookie)
+	}
+	var body OIDCSessionResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["access_token"] != "opaque-access" {
-		t.Fatalf("unexpected token response: %v", body)
+	if body.User.ID != "user-42" || body.User.Email != "user@example.com" {
+		t.Fatalf("unexpected session response: %+v", body)
 	}
 }

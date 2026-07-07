@@ -56,6 +56,7 @@ export APP_ENV=staging
 export OIDC_ISSUER=https://nextcloud.example.com
 export OIDC_CLIENT_ID=sklad
 export OIDC_REDIRECT_URI=http://localhost:3000/oauth/callback
+export SESSION_SECRET=replace-with-random-32-byte-secret
 ```
 
 ## Структура
@@ -77,9 +78,10 @@ kubectl create namespace sklad
 kubectl create secret generic sklad-api-secrets \
   --namespace sklad \
   --from-literal=DATABASE_URL='postgres://user:pass@postgres:5432/sklad?sslmode=disable' \
-  --from-literal=OIDC_ISSUER_URL='https://nextcloud.example.com' \
+  --from-literal=OIDC_ISSUER='https://nextcloud.example.com' \
   --from-literal=OIDC_CLIENT_ID='sklad' \
-  --from-literal=OIDC_CLIENT_SECRET='...'
+  --from-literal=OIDC_CLIENT_SECRET='...' \
+  --from-literal=SESSION_SECRET='replace-with-random-32-byte-secret'
 
 # 2. Установить chart из GHCR
 helm install sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.0 \

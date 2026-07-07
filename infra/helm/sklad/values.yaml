@@ -23,6 +23,7 @@ api:
     OIDC_REDIRECT_URI: "https://sklad.example.com/oauth/callback"
     OIDC_USERINFO_URL: ""
     OIDC_USERINFO_HOST: ""
+    SESSION_TTL_DAYS: "365"
   resources: {}
   persistence:
     enabled: true
@@ -45,6 +46,7 @@ secrets:
   oidcIssuerUrl: ""
   oidcClientId: ""
   oidcClientSecret: ""
+  sessionSecret: ""
 
 ingress:
   enabled: false

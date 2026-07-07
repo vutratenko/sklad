@@ -11,6 +11,7 @@ import (
 
 type MiddlewareConfig struct {
 	DevBypassEnabled bool
+	SessionManager   *SessionManager
 }
 
 type Middleware struct {
@@ -35,6 +36,14 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			return
 		}
 
+		if m.cfg.SessionManager != nil {
+			if user, err := m.cfg.SessionManager.UserFromRequest(r); err == nil {
+				ctx := context.WithValue(r.Context(), UserContextKey, user)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
+
 		raw := bearerToken(r.Header.Get("Authorization"))
 		if raw == "" {
 			writeUnauthorized(w, r, "missing token")
@@ -50,6 +59,9 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			writeUnauthorized(w, r, "invalid token")
 			return
 		}
+		if m.cfg.SessionManager != nil {
+			_, _ = m.cfg.SessionManager.SetCookie(w, user)
+		}
 		ctx := context.WithValue(r.Context(), UserContextKey, user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -57,7 +69,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 
 func isPublicPath(path string) bool {
 	switch path {
-	case "/health", "/api/v1/health", "/api/v1/auth/oidc/config", "/api/v1/auth/oidc/token":
+	case "/health", "/api/v1/health", "/api/v1/auth/oidc/config", "/api/v1/auth/oidc/token", "/api/v1/auth/logout":
 		return true
 	default:
 		return strings.HasPrefix(path, "/api/v1/media/")

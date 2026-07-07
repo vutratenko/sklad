@@ -86,11 +86,14 @@ func main() {
 	mux.Handle("GET /api/v1/media/{file}", http.StripPrefix("/api/v1/media/", http.FileServer(http.Dir(mediaStorage.Dir()))))
 	mux.HandleFunc("GET /api/v1/auth/oidc/config", auth.OIDCConfigHandler(cfg))
 	mux.HandleFunc("POST /api/v1/auth/oidc/token", auth.OIDCTokenHandler(cfg))
+	sessionManager := auth.NewSessionManagerFromConfig(cfg)
+	mux.HandleFunc("POST /api/v1/auth/logout", auth.LogoutHandler(sessionManager))
 	h.Register(mux)
 
 	validator := auth.NewValidator(cfg)
 	authMw := auth.NewMiddleware(auth.MiddlewareConfig{
 		DevBypassEnabled: cfg.DevBypassEnabled(),
+		SessionManager:   sessionManager,
 	}, validator)
 	handler := corsMiddleware(authMw.Wrap(mux))
 

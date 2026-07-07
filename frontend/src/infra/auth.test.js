@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  ensureAuth,
   configureAuthStorageForTests,
   callbackRedirectUri,
   getAccessToken,
+  handleOAuthCallback,
   hasOAuthCallback,
   selectAuthToken,
   setAccessToken,
@@ -80,5 +82,77 @@ describe('tokenEndpoint', () => {
       { token_endpoint: '/api/v1/auth/oidc/token' },
       { origin: 'https://sklad.sion2k.ru' },
     )).toBe('/api/v1/auth/oidc/token');
+  });
+});
+
+describe('session auth flow', () => {
+  let storage;
+  let fetchCalls;
+  let originalFetch;
+  let originalWindow;
+  let originalSessionStorage;
+
+  beforeEach(() => {
+    storage = memoryStorage();
+    configureAuthStorageForTests(storage);
+    fetchCalls = [];
+    originalFetch = globalThis.fetch;
+    originalWindow = globalThis.window;
+    originalSessionStorage = globalThis.sessionStorage;
+    globalThis.sessionStorage = memoryStorage();
+    globalThis.window = {
+      location: { origin: 'https://sklad.sion2k.ru', pathname: '/' },
+    };
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.window = originalWindow;
+    globalThis.sessionStorage = originalSessionStorage;
+  });
+
+  it('creates an app session on callback without storing provider tokens', async () => {
+    sessionStorage.setItem('sklad_auth_config', JSON.stringify({
+      client_id: 'sklad-client',
+      token_endpoint: '/api/v1/auth/oidc/token',
+      redirect_uri: 'https://sklad.sion2k.ru/oauth/callback',
+    }));
+    sessionStorage.setItem('pkce_verifier', 'pkce-verifier');
+    setAccessToken('old-provider-token');
+    globalThis.fetch = async (url, options) => {
+      fetchCalls.push({ url, options });
+      return {
+        ok: true,
+        json: async () => ({
+          user: { id: 'user-42' },
+          expires_at: '2027-01-01T00:00:00Z',
+        }),
+      };
+    };
+
+    const data = await handleOAuthCallback('auth-code');
+
+    expect(data.user.id).toBe('user-42');
+    expect(getAccessToken()).toBeNull();
+    expect(fetchCalls[0].url).toBe('/api/v1/auth/oidc/token');
+  });
+
+  it('checks the cookie-backed session even without a stored access token', async () => {
+    sessionStorage.setItem('sklad_auth_config', JSON.stringify({
+      dev_bypass: false,
+      token_endpoint: '/api/v1/auth/oidc/token',
+    }));
+    globalThis.fetch = async (url) => {
+      fetchCalls.push({ url });
+      return {
+        ok: true,
+        json: async () => ({ id: 'user-42' }),
+      };
+    };
+
+    const user = await ensureAuth();
+
+    expect(user.id).toBe('user-42');
+    expect(fetchCalls.map((call) => call.url)).toEqual(['/api/v1/auth/me']);
   });
 });
