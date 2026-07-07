@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   cacheUser,
   ensureAuth,
@@ -95,6 +95,8 @@ describe('session auth flow', () => {
   let originalWindow;
   let originalSessionStorage;
 
+  let navigatorStub;
+
   beforeEach(() => {
     storage = memoryStorage();
     configureAuthStorageForTests(storage);
@@ -102,6 +104,7 @@ describe('session auth flow', () => {
     originalFetch = globalThis.fetch;
     originalWindow = globalThis.window;
     originalSessionStorage = globalThis.sessionStorage;
+    navigatorStub = vi.stubGlobal('navigator', { onLine: true });
     globalThis.sessionStorage = memoryStorage();
     globalThis.window = {
       location: { origin: 'https://sklad.sion2k.ru', pathname: '/' },
@@ -112,6 +115,7 @@ describe('session auth flow', () => {
     globalThis.fetch = originalFetch;
     globalThis.window = originalWindow;
     globalThis.sessionStorage = originalSessionStorage;
+    navigatorStub.mockRestore();
   });
 
   it('creates an app session on callback without storing provider tokens', async () => {
@@ -166,7 +170,7 @@ describe('session auth flow', () => {
       token_endpoint: '/api/v1/auth/oidc/token',
     }));
     cacheUser({ id: 'user-offline', name: 'Offline User' });
-    globalThis.navigator = { onLine: false };
+    vi.stubGlobal('navigator', { onLine: false });
     globalThis.fetch = async () => {
       throw new Error('network unavailable');
     };
@@ -174,7 +178,6 @@ describe('session auth flow', () => {
     const user = await ensureAuth();
 
     expect(user).toEqual({ id: 'user-offline', name: 'Offline User' });
-    globalThis.navigator = { onLine: true };
   });
 
   it('loads auth config from local storage when offline', async () => {
@@ -182,7 +185,7 @@ describe('session auth flow', () => {
       client_id: 'sklad-client',
       dev_bypass: false,
     }));
-    globalThis.navigator = { onLine: false };
+    vi.stubGlobal('navigator', { onLine: false });
     globalThis.fetch = async () => {
       throw new Error('network unavailable');
     };
@@ -190,6 +193,5 @@ describe('session auth flow', () => {
     const config = await loadAuthConfig();
 
     expect(config.client_id).toBe('sklad-client');
-    globalThis.navigator = { onLine: true };
   });
 });

@@ -9,6 +9,12 @@ const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 let tokenStorage = globalThis.localStorage;
 let now = () => Date.now();
 
+function isOnline() {
+  if (typeof navigator === 'undefined') return true;
+  if (typeof navigator.onLine === 'boolean') return navigator.onLine;
+  return true;
+}
+
 export function configureAuthStorageForTests(storage, clock = () => Date.now()) {
   tokenStorage = storage;
   now = clock;
@@ -223,7 +229,7 @@ export async function ensureAuth() {
       return getCachedUser();
     }
   }
-  if (navigator.onLine) {
+  if (isOnline()) {
     try {
       return await fetchCurrentUser();
     } catch {
