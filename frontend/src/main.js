@@ -54,6 +54,15 @@ function getStockFiltersFromDOM() {
   };
 }
 
+function getMovementFiltersFromDOM() {
+  const filters = {};
+  const type = document.getElementById('mv-filter-type')?.value;
+  const skuId = document.getElementById('mv-filter-sku')?.value;
+  if (type) filters.operation_type = type;
+  if (skuId) filters.sku_id = skuId;
+  return filters;
+}
+
 async function refreshStocksPage(filters = {}) {
   const [stocks, skus, locations, warehouses] = await Promise.all([
     loadStocksView(filters),
@@ -63,6 +72,24 @@ async function refreshStocksPage(filters = {}) {
   ]);
   main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters);
   bindStocksHandlers(filters);
+}
+
+async function refreshMovementsPage(filters = {}) {
+  const [items, skus] = await Promise.all([
+    loadMovementsView(filters),
+    loadSKUs('', true),
+  ]);
+  main.innerHTML = renderMovementsPage(items, skus, filters);
+  bindMovementsHandlers();
+}
+
+function refreshDataInBackground(renderCurrent) {
+  if (!navigator.onLine || !currentUser) return;
+  const routePath = window.location.pathname || '/';
+  void syncEngine.refreshLocalData().then(async () => {
+    if ((window.location.pathname || '/') !== routePath) return;
+    await renderCurrent();
+  }).catch(() => {});
 }
 
 function updateNetworkStatus() {
@@ -296,14 +323,7 @@ function bindStocksHandlers(initialFilters = {}) {
 
 function bindMovementsHandlers() {
   const applyFilters = async () => {
-    const filters = {};
-    const type = document.getElementById('mv-filter-type')?.value;
-    const skuId = document.getElementById('mv-filter-sku')?.value;
-    if (type) filters.operation_type = type;
-    if (skuId) filters.sku_id = skuId;
-    const skus = await loadSKUs('', true);
-    main.innerHTML = renderMovementsPage(await loadMovementsView(filters), skus, filters);
-    bindMovementsHandlers();
+    await refreshMovementsPage(getMovementFiltersFromDOM());
   };
 
   document.getElementById('mv-filter-type')?.addEventListener('change', applyFilters);
@@ -791,26 +811,33 @@ async function renderRoute(route) {
       return;
     }
 
-    if (route.path !== '/') {
-      main.innerHTML = '<p class="empty">Загрузка...</p>';
-    }
-
     if (route.path === '/warehouses') {
       main.innerHTML = renderWarehouses(await loadWarehouses());
       bindWarehouseHandlers();
+      refreshDataInBackground(async () => {
+        main.innerHTML = renderWarehouses(await loadWarehouses());
+        bindWarehouseHandlers();
+      });
     } else if (route.path === '/') {
       main.innerHTML = renderHome();
     } else if (route.path === '/stocks') {
       const pending = readPendingFilters('sklad_stock_filters');
       await refreshStocksPage(pending);
+      refreshDataInBackground(async () => refreshStocksPage(getStockFiltersFromDOM()));
     } else if (route.path === '/movements') {
       const pending = readPendingFilters('sklad_movement_filters');
-      const skus = await loadSKUs('', true);
-      main.innerHTML = renderMovementsPage(await loadMovementsView(pending), skus, pending);
-      bindMovementsHandlers();
+      await refreshMovementsPage(pending);
+      refreshDataInBackground(async () => refreshMovementsPage(getMovementFiltersFromDOM()));
     } else if (route.path === '/skus') {
       main.innerHTML = renderSKUs(await loadSKUsView());
       bindSKUHandlers();
+      refreshDataInBackground(async () => {
+        const q = document.getElementById('sku-search')?.value.trim() || '';
+        main.innerHTML = renderSKUs(await loadSKUsView(q));
+        bindSKUHandlers();
+        const input = document.getElementById('sku-search');
+        if (input) input.value = q;
+      });
     } else if (route.path === '/scan') {
       main.innerHTML = renderScan();
       bindScanHandlers();

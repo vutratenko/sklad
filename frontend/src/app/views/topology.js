@@ -1,15 +1,6 @@
 import { apiFetch, db } from '../../infra/sync-engine.js';
 
 export async function loadWarehouses(activeOnly = false) {
-  const q = activeOnly ? '?active_only=true' : '';
-  if (navigator.onLine) {
-    try {
-      const resp = await apiFetch(`/warehouses${q}`);
-      await db.cacheWarehouses(resp.items || []);
-    } catch {
-      // use cache
-    }
-  }
   const items = await db.getCachedWarehouses();
   return activeOnly ? items.filter((w) => w.is_active !== false) : items;
 }
@@ -32,15 +23,6 @@ export async function deleteWarehouse(id) {
 }
 
 export async function loadLocations(warehouseId, activeOnly = false) {
-  const q = activeOnly ? '?active_only=true' : '';
-  if (navigator.onLine) {
-    try {
-      const resp = await apiFetch(`/warehouses/${warehouseId}/locations${q}`);
-      await db.cacheLocations(warehouseId, resp.items || []);
-    } catch {
-      // use cache
-    }
-  }
   const items = await db.getCachedLocations(warehouseId);
   return activeOnly ? items.filter((l) => l.is_active !== false) : items;
 }

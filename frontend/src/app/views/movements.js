@@ -1,19 +1,6 @@
 import { apiFetch, db, getDeviceId, queueMovement } from '../../infra/sync-engine.js';
 
 export async function loadMovements(filters = {}) {
-  const params = new URLSearchParams();
-  if (filters.sku_id) params.set('sku_id', filters.sku_id);
-  if (filters.operation_type) params.set('operation_type', filters.operation_type);
-  if (filters.limit) params.set('limit', String(filters.limit));
-  const query = params.toString() ? `?${params}` : '';
-  if (navigator.onLine) {
-    try {
-      const resp = await apiFetch(`/movements${query}`);
-      await db.cacheMovements(resp.items || []);
-    } catch {
-      // use cache
-    }
-  }
   let items = await db.getCachedMovements();
   if (filters.sku_id) {
     items = items.filter((m) => m.sku_id === filters.sku_id);

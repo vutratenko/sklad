@@ -1,18 +1,6 @@
 import { apiFetch, apiUpload, db } from '../../infra/sync-engine.js';
 
 export async function loadSKUs(q = '', activeOnly = false) {
-  const params = new URLSearchParams();
-  if (q) params.set('q', q);
-  if (activeOnly) params.set('active_only', 'true');
-  const query = params.toString() ? `?${params}` : '';
-  if (navigator.onLine) {
-    try {
-      const resp = await apiFetch(`/skus${query}`);
-      await db.cacheSKUs(resp.items || []);
-    } catch {
-      // use cache
-    }
-  }
   const items = await db.getCachedSKUs();
   let filtered = activeOnly ? items.filter((s) => s.is_active !== false) : items;
   if (q) {
