@@ -26,9 +26,9 @@ export async function openDB() {
           }
         }
       };
-      req.onsuccess = async () => {
-        await setMeta('schema_version', SCHEMA_VERSION);
+      req.onsuccess = () => {
         resolve(req.result);
+        void setMeta('schema_version', SCHEMA_VERSION);
       };
       req.onerror = () => reject(req.error);
     });
