@@ -782,34 +782,42 @@ async function renderRoute(route) {
     return;
   }
 
-  if (route.path === '/login') {
-    main.innerHTML = renderLogin();
-    bindLoginHandlers();
-    return;
-  }
+  try {
+    if (route.path === '/login') {
+      main.innerHTML = renderLogin();
+      bindLoginHandlers();
+      return;
+    }
 
-  if (route.path === '/warehouses') {
-    main.innerHTML = renderWarehouses(await loadWarehouses());
-    bindWarehouseHandlers();
-  } else if (route.path === '/') {
-    main.innerHTML = renderHome();
-  } else if (route.path === '/stocks') {
-    const pending = readPendingFilters('sklad_stock_filters');
-    await refreshStocksPage(pending);
-  } else if (route.path === '/movements') {
-    const pending = readPendingFilters('sklad_movement_filters');
-    const skus = await loadSKUs('', true);
-    main.innerHTML = renderMovementsPage(await loadMovementsView(pending), skus, pending);
-    bindMovementsHandlers();
-  } else if (route.path === '/skus') {
-    main.innerHTML = renderSKUs(await loadSKUsView());
-    bindSKUHandlers();
-  } else if (route.path === '/scan') {
-    main.innerHTML = renderScan();
-    bindScanHandlers();
-  } else if (route.path === '/sync') {
-    main.innerHTML = renderSyncPanel(await loadSyncQueue());
-    bindSyncHandlers();
+    if (route.path !== '/') {
+      main.innerHTML = '<p class="empty">Загрузка...</p>';
+    }
+
+    if (route.path === '/warehouses') {
+      main.innerHTML = renderWarehouses(await loadWarehouses());
+      bindWarehouseHandlers();
+    } else if (route.path === '/') {
+      main.innerHTML = renderHome();
+    } else if (route.path === '/stocks') {
+      const pending = readPendingFilters('sklad_stock_filters');
+      await refreshStocksPage(pending);
+    } else if (route.path === '/movements') {
+      const pending = readPendingFilters('sklad_movement_filters');
+      const skus = await loadSKUs('', true);
+      main.innerHTML = renderMovementsPage(await loadMovementsView(pending), skus, pending);
+      bindMovementsHandlers();
+    } else if (route.path === '/skus') {
+      main.innerHTML = renderSKUs(await loadSKUsView());
+      bindSKUHandlers();
+    } else if (route.path === '/scan') {
+      main.innerHTML = renderScan();
+      bindScanHandlers();
+    } else if (route.path === '/sync') {
+      main.innerHTML = renderSyncPanel(await loadSyncQueue());
+      bindSyncHandlers();
+    }
+  } catch (err) {
+    main.innerHTML = `<p class="empty">${escapeHtml(err.message || 'Не удалось открыть вкладку')}</p>`;
   }
 }
 

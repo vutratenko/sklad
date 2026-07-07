@@ -23,12 +23,12 @@ export function initRouter(onRoute) {
 
   window.addEventListener('popstate', () => onRoute(currentRoute()));
 
-  document.querySelectorAll('.nav-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const view = btn.dataset.view;
-      const route = routes[view] || routes.home;
-      navigate(route.path);
-    });
+  document.addEventListener('click', (event) => {
+    const btn = event.target.closest('.nav-btn[data-view]');
+    if (!btn) return;
+    const view = btn.dataset.view;
+    const route = routes[view] || routes.home;
+    navigate(route.path);
   });
 
   onRoute(currentRoute());
