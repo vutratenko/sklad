@@ -13,6 +13,14 @@ const state = {
   locations: [],
 };
 
+vi.mock('./photo-store.js', () => ({
+  enrichSkusPhotos: vi.fn(async (skus) => skus.map((sku) => ({ ...sku, photo_src: sku.photo_url || '' }))),
+  enrichSkuPhoto: vi.fn(async (sku) => ({ ...sku, photo_src: sku?.photo_url || '' })),
+  cacheServerPhoto: vi.fn(async () => {}),
+  localPhotoUrl: vi.fn((id) => `local:${id}`),
+  saveLocalPhoto: vi.fn(async () => 'blob:local'),
+}));
+
 vi.mock('../infra/sync-engine.js', () => ({
   apiFetch: vi.fn(async () => {
     throw new Error('network should not be used for tab loading');
@@ -27,6 +35,7 @@ vi.mock('../infra/sync-engine.js', () => ({
     getCachedWarehouses: vi.fn(async () => state.warehouses),
     getCachedLocations: vi.fn(async (warehouseId) => state.locations.filter((l) => l.warehouse_id === warehouseId)),
   },
+  queuePhotoUpload: vi.fn(),
 }));
 
 describe('tab data loaders', () => {
@@ -55,7 +64,7 @@ describe('tab data loaders', () => {
   });
 
   it('loads SKU tab from cache without waiting for API', async () => {
-    await expect(loadSKUs('томат', true)).resolves.toEqual([state.skus[0]]);
+    await expect(loadSKUs('томат', true)).resolves.toEqual([{ ...state.skus[0], photo_src: '' }]);
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
