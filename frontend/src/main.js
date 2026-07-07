@@ -1,5 +1,5 @@
 import { initRouter } from './app/router.js';
-import { movementFieldVisibility } from './app/movement-fields.js';
+import { bindMovementWizard, renderMovementWizard } from './app/movement-wizard.js';
 import { stockedWarehouses } from './app/home.js';
 import { isNavViewVisible } from './app/navigation.js';
 import {
@@ -22,7 +22,7 @@ import {
 import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue, lookupBarcode } from './app/views.js';
 import { generateSKUQRCodePDF } from './app/sku-label-pdf.js';
 import { startCameraScan } from './app/views/scan.js';
-import { ISSUE_REASONS, OPERATION_TYPES, submitMovement } from './app/views/movements.js';
+import { OPERATION_TYPES, submitMovement } from './app/views/movements.js';
 import { SyncEngine, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
 import { ensureAuth, handleOAuthCallback, hasOAuthCallback, loadAuthConfig, logout, startLogin } from './infra/auth.js';
 
@@ -74,7 +74,7 @@ async function refreshStocksPage(filters = {}) {
     loadWarehouses(true),
   ]);
   main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters);
-  bindStocksHandlers(filters);
+  bindStocksHandlers({ filters, skus, locations });
 }
 
 async function refreshMovementsPage(filters = {}) {
@@ -175,10 +175,6 @@ function renderStocksPage(stocks, skus, locations, warehouses, filters = {}) {
     </div>
   `).join('');
 
-  const skuOptions = skus
-    .filter((s) => s.is_active !== false)
-    .map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`)
-    .join('');
   const whOptions = warehouses
     .map((w) => `<option value="${w.id}"${filters.warehouse_id === w.id ? ' selected' : ''}>${escapeHtml(w.name)}</option>`)
     .join('');
@@ -188,23 +184,10 @@ function renderStocksPage(stocks, skus, locations, warehouses, filters = {}) {
   const locOptions = locSource
     .map((l) => `<option value="${l.id}"${filters.location_id === l.id ? ' selected' : ''}>${escapeHtml(l.warehouse_name)} / ${escapeHtml(l.name)}</option>`)
     .join('');
-  const opOptions = OPERATION_TYPES.map((o) => `<option value="${o.value}">${o.label}</option>`).join('');
-  const reasonOptions = ISSUE_REASONS.map((r) => `<option value="${r.value}">${r.label}</option>`).join('');
 
   return `
-    <div class="card">
-      <h3>Новое движение</h3>
-      <div class="form-row"><label>Тип</label><select id="mv-type">${opOptions}</select></div>
-      <div class="form-row" id="mv-reason-row" hidden><label>Причина расхода</label><select id="mv-reason">${reasonOptions}</select></div>
-      <div class="form-row" id="mv-adj-row" hidden><label>Корректировка</label>
-        <select id="mv-adj-dir"><option value="increase">Увеличить</option><option value="decrease">Уменьшить</option></select>
-      </div>
-      <div class="form-row"><label>SKU</label><select id="mv-sku"><option value="">— выберите —</option>${skuOptions}</select></div>
-      <div class="form-row"><label>Количество</label><input id="mv-qty" type="number" min="1" value="1" /></div>
-      <div class="form-row" id="mv-from-row" hidden><label>Откуда</label><select id="mv-from"><option value="">—</option>${locOptions}</select></div>
-      <div class="form-row" id="mv-to-row"><label>Куда</label><select id="mv-to"><option value="">—</option>${locOptions}</select></div>
-      <button class="primary" id="mv-submit">Провести</button>
-      <div id="mv-result" class="meta" style="margin-top:0.5rem"></div>
+    <div class="card movement-wizard-card">
+      ${renderMovementWizard(skus, locations)}
     </div>
     <div class="card">
       <h3>Остатки</h3>
@@ -241,26 +224,35 @@ function renderMovementsPage(items, skus, filters = {}) {
   `;
 }
 
-function updateMovementFields() {
-  const type = document.getElementById('mv-type')?.value || 'receipt';
-  const adjustmentDirection = document.getElementById('mv-adj-dir')?.value || 'increase';
-  const reasonRow = document.getElementById('mv-reason-row');
-  const fromRow = document.getElementById('mv-from-row');
-  const toRow = document.getElementById('mv-to-row');
-  const adjRow = document.getElementById('mv-adj-row');
-  if (!reasonRow) return;
-
-  const visibility = movementFieldVisibility(type, adjustmentDirection);
-  reasonRow.hidden = !visibility.reason;
-  adjRow.hidden = !visibility.adjustment;
-  fromRow.hidden = !visibility.from;
-  toRow.hidden = !visibility.to;
+async function submitStockMovement(data, resultEl) {
+  const res = await submitMovement(data);
+  if (res.queued) {
+    if (resultEl) resultEl.textContent = 'Операция в очереди (offline). Синхронизация при подключении.';
+    syncEngine.sync();
+  } else if (resultEl) {
+    resultEl.textContent = 'Движение проведено';
+  }
+  const filters = getStockFiltersFromDOM();
+  const [stocks, skus, locations, warehouses] = await Promise.all([
+    loadStocksView(filters),
+    loadSKUs('', true),
+    loadAllLocations(),
+    loadWarehouses(true),
+  ]);
+  main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters);
+  bindStocksHandlers({ filters, skus, locations });
 }
 
-function bindStocksHandlers(initialFilters = {}) {
-  updateMovementFields();
-  document.getElementById('mv-type')?.addEventListener('change', updateMovementFields);
-  document.getElementById('mv-adj-dir')?.addEventListener('change', updateMovementFields);
+function bindStocksHandlers({ filters: initialFilters = {}, skus = [], locations = [] } = {}) {
+  const wizardRoot = document.getElementById('movement-wizard');
+  if (wizardRoot) {
+    bindMovementWizard(wizardRoot, {
+      skus,
+      locations,
+      initialSkuId: initialFilters.sku_id,
+      onSubmit: submitStockMovement,
+    });
+  }
 
   const applyStockFilters = async () => {
     await refreshStocksPage(getStockFiltersFromDOM());
@@ -273,73 +265,6 @@ function bindStocksHandlers(initialFilters = {}) {
     await refreshStocksPage(filters);
   });
   document.getElementById('stock-filter-loc')?.addEventListener('change', applyStockFilters);
-
-  if (initialFilters.sku_id) {
-    const mvSku = document.getElementById('mv-sku');
-    if (mvSku) mvSku.value = initialFilters.sku_id;
-  }
-
-  document.getElementById('mv-submit')?.addEventListener('click', async () => {
-    const resultEl = document.getElementById('mv-result');
-    const type = document.getElementById('mv-type').value;
-    const skuId = document.getElementById('mv-sku').value;
-    const qty = parseInt(document.getElementById('mv-qty').value, 10);
-    if (!skuId || !qty || qty <= 0) {
-      resultEl.textContent = 'Выберите SKU и количество';
-      return;
-    }
-    const data = {
-      operation_type: type,
-      sku_id: skuId,
-      quantity: qty,
-      reason_code: type === 'issue' ? document.getElementById('mv-reason').value : '',
-    };
-    const adjustmentDirection = document.getElementById('mv-adj-dir').value;
-    const adjustmentLocation = document.getElementById('mv-from').value || undefined;
-    if (type === 'receipt' || type === 'transfer') {
-      data.to_location_id = document.getElementById('mv-to').value || undefined;
-    }
-    if (type === 'issue' || type === 'transfer') {
-      data.from_location_id = document.getElementById('mv-from').value || undefined;
-    }
-    if (type === 'adjustment' && adjustmentDirection === 'increase') {
-      data.to_location_id = adjustmentLocation;
-    }
-    if (type === 'adjustment' && adjustmentDirection === 'decrease') {
-      data.from_location_id = adjustmentLocation;
-    }
-    if ((type === 'receipt' || type === 'transfer') && !data.to_location_id) {
-      resultEl.textContent = 'Укажите место назначения';
-      return;
-    }
-    if ((type === 'issue' || type === 'transfer') && !data.from_location_id) {
-      resultEl.textContent = 'Укажите место отгрузки';
-      return;
-    }
-    if (type === 'adjustment' && !adjustmentLocation) {
-      resultEl.textContent = 'Укажите место корректировки';
-      return;
-    }
-    try {
-      const res = await submitMovement(data);
-      if (res.queued) {
-        resultEl.textContent = 'Операция в очереди (offline). Синхронизация при подключении.';
-        syncEngine.sync();
-      } else {
-        resultEl.textContent = 'Движение проведено';
-      }
-      const [stocks, skus, locations, warehouses] = await Promise.all([
-        loadStocksView(),
-        loadSKUs('', true),
-        loadAllLocations(),
-        loadWarehouses(true),
-      ]);
-      main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses);
-      bindStocksHandlers();
-    } catch (err) {
-      resultEl.textContent = err.message;
-    }
-  });
 }
 
 function bindMovementsHandlers() {
