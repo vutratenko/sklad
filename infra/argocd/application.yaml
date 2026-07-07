@@ -2,12 +2,12 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: sklad
-  namespace: argocd
+  namespace: shturval-cd
 spec:
-  project: default
+  project: sklad
   source:
-    repoURL: oci://ghcr.io/vutratenko/charts
-    chart: sklad
+    repoURL: oci://ghcr.io/vutratenko/charts/sklad
+    path: "."
     targetRevision: "0.1.7"
     helm:
       valuesObject:
