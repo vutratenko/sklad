@@ -8,8 +8,8 @@ import (
 	catalogapp "github.com/vutratenko/sklad/internal/modules/catalog/application"
 	catalogdomain "github.com/vutratenko/sklad/internal/modules/catalog/domain"
 	catalogpg "github.com/vutratenko/sklad/internal/modules/catalog/infrastructure/postgres"
-	"github.com/vutratenko/sklad/internal/testutil"
 	sharedpg "github.com/vutratenko/sklad/internal/shared/postgres"
+	"github.com/vutratenko/sklad/internal/testutil"
 )
 
 func TestCatalogCRUD(t *testing.T) {
@@ -20,14 +20,13 @@ func TestCatalogCRUD(t *testing.T) {
 		Name:     "Tomato paste",
 		Category: "canned",
 		Unit:     "шт",
-		Barcodes: []string{"4601234567890"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	got, err := svc.Get(ctx, sku.ID.String())
-	if err != nil || got.Name != "Tomato paste" || len(got.Barcodes) != 1 {
+	if err != nil || got.Name != "Tomato paste" || len(got.Barcodes) != 1 || got.Barcodes[0] != "000001" {
 		t.Fatalf("get sku: %v %+v", err, got)
 	}
 
@@ -37,18 +36,18 @@ func TestCatalogCRUD(t *testing.T) {
 		t.Fatalf("update sku: %v", err)
 	}
 
-	updated, err = svc.AddBarcode(ctx, sku.ID.String(), "4601234567891")
-	if err != nil || len(updated.Barcodes) != 2 {
-		t.Fatalf("add barcode: %v len=%d", err, len(updated.Barcodes))
+	_, err = svc.AddBarcode(ctx, sku.ID.String(), "000002")
+	if err == nil {
+		t.Fatal("expected add barcode to reject second code")
 	}
 
-	byBarcode, err := svc.FindByBarcode(ctx, "4601234567890")
+	byBarcode, err := svc.FindByBarcode(ctx, "000001")
 	if err != nil || byBarcode.ID != sku.ID {
 		t.Fatalf("find by barcode: %v", err)
 	}
 
-	updated, err = svc.RemoveBarcode(ctx, sku.ID.String(), "4601234567890")
-	if err != nil || len(updated.Barcodes) != 1 {
+	updated, err = svc.RemoveBarcode(ctx, sku.ID.String(), "000001")
+	if err != nil || len(updated.Barcodes) != 0 {
 		t.Fatalf("remove barcode: %v len=%d", err, len(updated.Barcodes))
 	}
 

@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	catalogdomain "github.com/vutratenko/sklad/internal/modules/catalog/domain"
@@ -21,6 +22,11 @@ func (s *CatalogService) Create(ctx context.Context, in catalogdomain.CreateSKUI
 		return nil, apperr.Validation("name is required")
 	}
 	in.Unit = defaultStr(in.Unit, "шт")
+	barcode, err := s.repo.NextBarcode(ctx)
+	if err != nil {
+		return nil, err
+	}
+	in.Barcodes = []string{barcode}
 	return s.repo.Create(ctx, in)
 }
 
@@ -30,6 +36,13 @@ func (s *CatalogService) Get(ctx context.Context, id string) (*catalogdomain.SKU
 		return nil, err
 	}
 	return s.repo.GetByID(ctx, uid)
+}
+
+func FormatSKUBarcode(n int) (string, error) {
+	if n < 1 || n > 999999 {
+		return "", apperr.Validation("barcode sequence is exhausted")
+	}
+	return fmt.Sprintf("%06d", n), nil
 }
 
 func (s *CatalogService) List(ctx context.Context, q string, activeOnly bool) ([]catalogdomain.SKU, error) {
@@ -69,8 +82,12 @@ func (s *CatalogService) AddBarcode(ctx context.Context, skuID string, barcode s
 	if barcode == "" {
 		return nil, apperr.Validation("barcode is required")
 	}
-	if _, err := s.repo.GetByID(ctx, uid); err != nil {
+	sku, err := s.repo.GetByID(ctx, uid)
+	if err != nil {
 		return nil, err
+	}
+	if len(sku.Barcodes) > 0 {
+		return nil, apperr.Validation("sku already has barcode")
 	}
 	if err := s.repo.AddBarcode(ctx, uid, barcode); err != nil {
 		return nil, err

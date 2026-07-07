@@ -11,15 +11,14 @@ import {
   updateWarehouse,
 } from './app/views/topology.js';
 import {
-  addBarcode,
   createSKU,
   deleteSKU,
   loadSKUs,
-  removeBarcode,
   updateSKU,
   uploadPhoto,
 } from './app/views/catalog.js';
 import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue, lookupBarcode } from './app/views.js';
+import { generateSKUQRCodePDF } from './app/sku-label-pdf.js';
 import { startCameraScan } from './app/views/scan.js';
 import { ISSUE_REASONS, OPERATION_TYPES, submitMovement } from './app/views/movements.js';
 import { SyncEngine, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
@@ -339,19 +338,18 @@ function renderSKUs(items) {
           <h3>${escapeHtml(s.name)}</h3>
           <div class="meta">${escapeHtml(s.category || '')} · ${escapeHtml(s.unit)} · ${s.is_active === false ? 'неактивен' : 'активен'}</div>
           ${s.description ? `<div class="meta">${escapeHtml(s.description)}</div>` : ''}
-          ${(s.barcodes || []).length ? `<div class="meta">Штрихкоды: ${(s.barcodes || []).map((b) => escapeHtml(b)).join(', ')}</div>` : ''}
+          <div class="meta">Штрихкод: ${escapeHtml((s.barcodes || [])[0] || 'не назначен')}</div>
         </div>
       </div>
       <div class="form-row" style="flex-direction:row;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap">
         <button class="nav-btn" data-action="edit-sku" data-id="${s.id}">Изменить</button>
         <button class="nav-btn" data-action="del-sku" data-id="${s.id}">Удалить</button>
-        <button class="nav-btn" data-action="show-barcodes" data-id="${s.id}">Штрихкоды</button>
+        <button class="nav-btn" data-action="print-sku-qr" data-id="${s.id}">PDF QR</button>
         <label class="nav-btn" style="cursor:pointer">
           Фото
           <input type="file" accept="image/jpeg,image/png,image/webp" hidden data-action="upload-photo" data-id="${s.id}" />
         </label>
       </div>
-      <div id="barcodes-${s.id}" class="barcodes-panel" hidden></div>
     </div>
   `).join('');
 
@@ -362,7 +360,6 @@ function renderSKUs(items) {
       <div class="form-row"><label>Категория</label><input id="sku-category" placeholder="консервы" /></div>
       <div class="form-row"><label>Единица</label><input id="sku-unit" placeholder="шт" value="шт" /></div>
       <div class="form-row"><label>Описание</label><input id="sku-desc" placeholder="400г" /></div>
-      <div class="form-row"><label>Штрихкоды (через запятую)</label><input id="sku-barcodes" placeholder="4601234567890" /></div>
       <button class="primary" id="sku-create">Создать SKU</button>
     </div>
     <div class="card">
@@ -378,10 +375,8 @@ function bindSKUHandlers() {
     const category = document.getElementById('sku-category').value.trim();
     const unit = document.getElementById('sku-unit').value.trim() || 'шт';
     const description = document.getElementById('sku-desc').value.trim();
-    const barcodesRaw = document.getElementById('sku-barcodes').value.trim();
     if (!name) return;
-    const barcodes = barcodesRaw ? barcodesRaw.split(',').map((b) => b.trim()).filter(Boolean) : [];
-    await createSKU({ name, category, unit, description, barcodes });
+    await createSKU({ name, category, unit, description });
     main.innerHTML = renderSKUs(await loadSKUs());
     bindSKUHandlers();
   });
@@ -426,65 +421,16 @@ function bindSKUHandlers() {
     });
   });
 
-  main.querySelectorAll('[data-action="show-barcodes"]').forEach((btn) => {
+  main.querySelectorAll('[data-action="print-sku-qr"]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const panel = document.getElementById(`barcodes-${btn.dataset.id}`);
-      if (!panel.hidden) {
-        panel.hidden = true;
-        return;
-      }
       const items = await loadSKUs();
       const sku = items.find((s) => s.id === btn.dataset.id);
-      panel.innerHTML = renderBarcodesPanel(btn.dataset.id, sku?.barcodes || []);
-      panel.hidden = false;
-      bindBarcodeHandlers(btn.dataset.id);
-    });
-  });
-}
-
-function renderBarcodesPanel(skuId, barcodes) {
-  const items = barcodes.map((bc) => `
-    <div class="card" style="margin-top:0.5rem">
-      <code>${escapeHtml(bc)}</code>
-      <button class="nav-btn" data-action="del-bc" data-id="${skuId}" data-bc="${escapeHtml(bc)}">Удалить</button>
-    </div>
-  `).join('');
-  return `
-    <h4>Штрихкоды</h4>
-    <div class="form-row"><input id="bc-new-${skuId}" placeholder="4601234567890" /></div>
-    <button class="primary" data-action="add-bc" data-id="${skuId}">Добавить</button>
-    ${items || '<p class="empty">Нет штрихкодов</p>'}
-  `;
-}
-
-function bindBarcodeHandlers(skuId) {
-  main.querySelector(`[data-action="add-bc"][data-id="${skuId}"]`)?.addEventListener('click', async () => {
-    const barcode = document.getElementById(`bc-new-${skuId}`).value.trim();
-    if (!barcode) return;
-    try {
-      await addBarcode(skuId, barcode);
-      const panel = document.getElementById(`barcodes-${skuId}`);
-      const items = await loadSKUs();
-      const sku = items.find((s) => s.id === skuId);
-      panel.innerHTML = renderBarcodesPanel(skuId, sku?.barcodes || []);
-      bindBarcodeHandlers(skuId);
-      main.innerHTML = renderSKUs(await loadSKUs());
-      bindSKUHandlers();
-    } catch (err) {
-      alert(err.message);
-    }
-  });
-
-  main.querySelectorAll(`#barcodes-${skuId} [data-action="del-bc"]`).forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      await removeBarcode(btn.dataset.id, btn.dataset.bc);
-      const panel = document.getElementById(`barcodes-${skuId}`);
-      const items = await loadSKUs();
-      const sku = items.find((s) => s.id === skuId);
-      panel.innerHTML = renderBarcodesPanel(skuId, sku?.barcodes || []);
-      bindBarcodeHandlers(skuId);
-      main.innerHTML = renderSKUs(await loadSKUs());
-      bindSKUHandlers();
+      if (!sku) return;
+      try {
+        await generateSKUQRCodePDF(sku);
+      } catch (err) {
+        alert(err.message);
+      }
     });
   });
 }

@@ -146,6 +146,22 @@ func (r *SKURepository) FindByBarcode(ctx context.Context, barcode string) (*dom
 	return r.GetByID(ctx, skuID)
 }
 
+func (r *SKURepository) NextBarcode(ctx context.Context) (string, error) {
+	var next int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(MAX(barcode::integer), 0) + 1
+		FROM sku_barcodes
+		WHERE barcode ~ '^[0-9]{6}$'
+	`).Scan(&next)
+	if err != nil {
+		return "", err
+	}
+	if next < 1 || next > 999999 {
+		return "", apperr.Validation("barcode sequence is exhausted")
+	}
+	return fmt.Sprintf("%06d", next), nil
+}
+
 func (r *SKURepository) AddBarcode(ctx context.Context, skuID uuid.UUID, barcode string) error {
 	barcode = trimBarcode(barcode)
 	_, err := r.pool.Exec(ctx, `INSERT INTO sku_barcodes (sku_id, barcode) VALUES ($1, $2)`, skuID, barcode)

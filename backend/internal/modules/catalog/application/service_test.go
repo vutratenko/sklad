@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	catalogapp "github.com/vutratenko/sklad/internal/modules/catalog/application"
 	catalogdomain "github.com/vutratenko/sklad/internal/modules/catalog/domain"
-	"github.com/google/uuid"
 	"github.com/vutratenko/sklad/internal/shared/apperr"
 )
 
@@ -33,7 +33,6 @@ func (f *fakeRepo) Create(_ context.Context, in catalogdomain.CreateSKUInput) (*
 		if err := f.AddBarcode(context.Background(), sku.ID, bc); err != nil {
 			return nil, err
 		}
-		sku.Barcodes = append(sku.Barcodes, bc)
 	}
 	return sku, nil
 }
@@ -91,6 +90,28 @@ func (f *fakeRepo) FindByBarcode(_ context.Context, barcode string) (*catalogdom
 	return f.GetByID(context.Background(), id)
 }
 
+func (f *fakeRepo) NextBarcode(_ context.Context) (string, error) {
+	max := 0
+	for barcode := range f.barcodes {
+		if len(barcode) != 6 {
+			continue
+		}
+		n := 0
+		ok := true
+		for _, ch := range barcode {
+			if ch < '0' || ch > '9' {
+				ok = false
+				break
+			}
+			n = n*10 + int(ch-'0')
+		}
+		if ok && n > max {
+			max = n
+		}
+	}
+	return catalogapp.FormatSKUBarcode(max + 1)
+}
+
 func (f *fakeRepo) AddBarcode(_ context.Context, skuID uuid.UUID, barcode string) error {
 	if _, ok := f.barcodes[barcode]; ok {
 		return apperr.DuplicateBarcode()
@@ -125,24 +146,50 @@ func TestCreateSKU_Validation(t *testing.T) {
 	}
 }
 
-func TestAddBarcode_Duplicate(t *testing.T) {
+func TestCreateSKU_AssignsSingleAutoBarcode(t *testing.T) {
 	repo := &fakeRepo{skus: map[uuid.UUID]*catalogdomain.SKU{}, barcodes: map[string]uuid.UUID{}}
 	svc := catalogapp.NewCatalogService(repo)
-	sku, err := svc.Create(context.Background(), catalogdomain.CreateSKUInput{Name: "Tomato", Barcodes: []string{"123"}})
+
+	first, err := svc.Create(context.Background(), catalogdomain.CreateSKUInput{Name: "Tomato", Barcodes: []string{"999999"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := svc.Create(context.Background(), catalogdomain.CreateSKUInput{Name: "Other"})
+	second, err := svc.Create(context.Background(), catalogdomain.CreateSKUInput{Name: "Jam"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = svc.AddBarcode(context.Background(), other.ID.String(), "123")
-	if err == nil {
-		t.Fatal("expected duplicate barcode error")
+
+	if got := first.Barcodes; len(got) != 1 || got[0] != "000001" {
+		t.Fatalf("expected first generated barcode 000001, got %#v", got)
+	}
+	if got := second.Barcodes; len(got) != 1 || got[0] != "000002" {
+		t.Fatalf("expected second generated barcode 000002, got %#v", got)
+	}
+}
+
+func TestFormatSKUBarcode(t *testing.T) {
+	got, err := catalogapp.FormatSKUBarcode(42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "000042" {
+		t.Fatalf("expected 000042, got %q", got)
+	}
+	if _, err := catalogapp.FormatSKUBarcode(1000000); err == nil {
+		t.Fatal("expected sequence exhaustion error")
+	}
+}
+
+func TestAddBarcode_RejectsSecondBarcode(t *testing.T) {
+	repo := &fakeRepo{skus: map[uuid.UUID]*catalogdomain.SKU{}, barcodes: map[string]uuid.UUID{}}
+	svc := catalogapp.NewCatalogService(repo)
+	sku, err := svc.Create(context.Background(), catalogdomain.CreateSKUInput{Name: "Tomato"})
+	if err != nil {
+		t.Fatal(err)
 	}
 	_, err = svc.AddBarcode(context.Background(), sku.ID.String(), "456")
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("expected validation error for second barcode")
 	}
 }
 

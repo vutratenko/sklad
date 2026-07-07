@@ -49,6 +49,7 @@ type Repository interface {
 	Update(ctx context.Context, id uuid.UUID, in UpdateSKUInput) (*SKU, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	FindByBarcode(ctx context.Context, barcode string) (*SKU, error)
+	NextBarcode(ctx context.Context) (string, error)
 	AddBarcode(ctx context.Context, skuID uuid.UUID, barcode string) error
 	RemoveBarcode(ctx context.Context, skuID uuid.UUID, barcode string) error
 }
