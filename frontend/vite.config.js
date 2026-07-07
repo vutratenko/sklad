@@ -15,17 +15,17 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'sklad-icon.png', 'sklad-wordmark.png'],
       manifest: {
         name: 'Sklad WMS',
         short_name: 'Sklad',
         description: 'Домашняя WMS',
-        theme_color: '#2563eb',
-        background_color: '#ffffff',
+        theme_color: '#111317',
+        background_color: '#111317',
         display: 'standalone',
         start_url: '/',
         icons: [
-          { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml' },
+          { src: 'sklad-icon.png', sizes: '1536x1024', type: 'image/png' },
         ],
       },
       workbox: {
