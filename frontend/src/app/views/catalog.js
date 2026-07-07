@@ -89,3 +89,66 @@ export async function lookupBarcode(barcode) {
   }
   return local;
 }
+
+export async function lookupSKU(skuId) {
+  const id = String(skuId || '').trim();
+  if (!id) {
+    throw new Error('Укажите ID SKU');
+  }
+
+  async function lookupLocal() {
+    const items = await db.getCachedSKUs();
+    const sku = items.find((item) => item.id === id);
+    if (!sku) return null;
+    const stocks = await db.getStocksBySKUID(sku.id);
+    return {
+      barcode: (sku.barcodes || [])[0] || id,
+      sku,
+      stocks,
+      source: 'cache',
+    };
+  }
+
+  if (navigator.onLine) {
+    try {
+      const sku = await apiFetch(`/skus/${id}`);
+      await db.putSKU(sku);
+      const stocksResp = await apiFetch(`/stocks?sku_id=${encodeURIComponent(id)}`);
+      const stocks = stocksResp.items || [];
+      if (stocks.length) await db.cacheStocks(stocks);
+      return {
+        barcode: (sku.barcodes || [])[0] || id,
+        sku,
+        stocks,
+        source: 'server',
+      };
+    } catch (err) {
+      const local = await lookupLocal();
+      if (local) return local;
+      throw err;
+    }
+  }
+
+  const local = await lookupLocal();
+  if (!local) {
+    throw new Error('SKU не найден в локальном кэше');
+  }
+  return local;
+}
+
+export async function lookupScanCode(code) {
+  const trimmed = String(code || '').trim();
+  if (!trimmed) {
+    throw new Error('Укажите код');
+  }
+
+  try {
+    return await lookupBarcode(trimmed);
+  } catch (barcodeErr) {
+    try {
+      return await lookupSKU(trimmed);
+    } catch {
+      throw barcodeErr;
+    }
+  }
+}

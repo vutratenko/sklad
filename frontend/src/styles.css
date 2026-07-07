@@ -532,6 +532,13 @@ button.primary:hover:not(:disabled) {
   background: var(--color-bg);
 }
 
+.scan-camera-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
 .sync-error {
   color: var(--color-danger);
 }

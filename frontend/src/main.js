@@ -16,12 +16,13 @@ import {
   createSKU,
   deleteSKU,
   loadSKUs,
+  lookupScanCode,
   updateSKU,
   uploadPhoto,
 } from './app/views/catalog.js';
-import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue, lookupBarcode } from './app/views.js';
+import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue } from './app/views.js';
 import { generateSKUQRCodePDF } from './app/sku-label-pdf.js';
-import { startCameraScan } from './app/views/scan.js';
+import { isCameraScanSupported, parseQrScanValue, startCameraScan } from './app/views/scan.js';
 import { OPERATION_TYPES, submitMovement } from './app/views/movements.js';
 import { SyncEngine, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
 import { ensureAuth, handleOAuthCallback, hasOAuthCallback, loadAuthConfig, logout, startLogin } from './infra/auth.js';
@@ -421,21 +422,23 @@ function renderScanResult(resp) {
 }
 
 function renderScan() {
-  const cameraSupported = 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
+  const cameraSupported = isCameraScanSupported();
   return `
     <div class="card">
-      <h3>Сканирование штрихкода</h3>
+      <h3>Сканирование</h3>
       <div class="meta">Работает offline по локальному кэшу (ADR-003)</div>
+      ${cameraSupported ? `
+        <div class="scan-camera-actions">
+          <button type="button" class="nav-btn" id="qr-camera">Сканировать QR</button>
+          <button type="button" class="nav-btn" id="qr-camera-stop" hidden>Стоп</button>
+        </div>
+        <video id="scan-video" class="scan-video" playsinline hidden></video>
+      ` : ''}
       <div class="form-row">
-        <label>Штрихкод</label>
-        <input id="barcode-input" placeholder="Введите или отсканируйте" autofocus />
+        <label>Код или ID SKU</label>
+        <input id="barcode-input" placeholder="Введите или отсканируйте QR" autofocus />
       </div>
-      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-        <button class="primary" id="barcode-search">Найти</button>
-        ${cameraSupported ? '<button class="nav-btn" id="barcode-camera">Камера</button>' : ''}
-        <button class="nav-btn" id="barcode-camera-stop" hidden>Стоп</button>
-      </div>
-      <video id="scan-video" class="scan-video" playsinline hidden></video>
+      <button class="primary" id="barcode-search">Найти</button>
       <div id="scan-result" style="margin-top:1rem"></div>
     </div>
   `;
@@ -813,15 +816,15 @@ function bindScanHandlers() {
   const input = document.getElementById('barcode-input');
   const resultEl = document.getElementById('scan-result');
   const video = document.getElementById('scan-video');
-  const stopBtn = document.getElementById('barcode-camera-stop');
-  const cameraBtn = document.getElementById('barcode-camera');
+  const stopBtn = document.getElementById('qr-camera-stop');
+  const cameraBtn = document.getElementById('qr-camera');
 
   async function doSearch() {
     const barcode = input.value.trim();
     if (!barcode) return;
     resultEl.innerHTML = '<p class="meta">Поиск...</p>';
     try {
-      const resp = await lookupBarcode(barcode);
+      const resp = await lookupScanCode(barcode);
       resultEl.innerHTML = renderScanResult(resp);
       resultEl.querySelector('[data-action="scan-go-stocks"]')?.addEventListener('click', (e) => {
         sessionStorage.setItem('sklad_stock_filters', JSON.stringify({ sku_id: e.target.dataset.skuId }));
@@ -843,14 +846,14 @@ function bindScanHandlers() {
 
   cameraBtn?.addEventListener('click', async () => {
     try {
+      resultEl.innerHTML = '';
       video.hidden = false;
       stopBtn.hidden = false;
       stopCameraScan = await startCameraScan((code) => {
-        input.value = code;
+        input.value = parseQrScanValue(code);
         stopBtn.hidden = true;
         video.hidden = true;
-        doSearch();
-      }, video);
+      }, video, { formats: ['qr_code'] });
     } catch (err) {
       resultEl.innerHTML = `<p class="empty">${escapeHtml(err.message)}</p>`;
     }
