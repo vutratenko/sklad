@@ -37,13 +37,34 @@ export function parseQrScanValue(raw) {
   return value;
 }
 
+let detectorReadyPromise = null;
+
+async function ensureBarcodeDetector() {
+  if (detectorReadyPromise) return detectorReadyPromise;
+
+  detectorReadyPromise = (async () => {
+    if ('BarcodeDetector' in window) {
+      try {
+        await window.BarcodeDetector.getSupportedFormats();
+        return;
+      } catch {
+        // Native API unavailable on this platform, use polyfill.
+      }
+    }
+
+    const { BarcodeDetectorPolyfill } = await import('@undecaf/barcode-detector-polyfill');
+    window.BarcodeDetector = BarcodeDetectorPolyfill;
+  })();
+
+  return detectorReadyPromise;
+}
+
 export async function startCameraScan(onBarcode, videoEl, options = {}) {
-  if (!('BarcodeDetector' in window)) {
-    throw new Error('Сканирование камерой не поддерживается в этом браузере');
-  }
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('Камера недоступна');
   }
+
+  await ensureBarcodeDetector();
 
   const formats = options.formats || ['ean_13', 'ean_8', 'code_128', 'upc_a', 'qr_code'];
 
@@ -82,5 +103,5 @@ export async function startCameraScan(onBarcode, videoEl, options = {}) {
 }
 
 export function isCameraScanSupported() {
-  return 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
+  return !!navigator.mediaDevices?.getUserMedia;
 }

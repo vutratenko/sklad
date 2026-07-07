@@ -427,13 +427,11 @@ function renderScan() {
     <div class="card">
       <h3>Сканирование</h3>
       <div class="meta">Работает offline по локальному кэшу (ADR-003)</div>
-      ${cameraSupported ? `
-        <div class="scan-camera-actions">
-          <button type="button" class="nav-btn" id="qr-camera">Сканировать QR</button>
-          <button type="button" class="nav-btn" id="qr-camera-stop" hidden>Стоп</button>
-        </div>
-        <video id="scan-video" class="scan-video" playsinline hidden></video>
-      ` : ''}
+      <div class="scan-camera-actions">
+        <button type="button" class="nav-btn" id="qr-camera"${cameraSupported ? '' : ' disabled title="Камера доступна только по HTTPS"'}>Сканировать QR</button>
+        <button type="button" class="nav-btn" id="qr-camera-stop" hidden>Стоп</button>
+      </div>
+      <video id="scan-video" class="scan-video" playsinline hidden></video>
       <div class="form-row">
         <label>Код или ID SKU</label>
         <input id="barcode-input" placeholder="Введите или отсканируйте QR" autofocus />
