@@ -57,7 +57,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 
 func isPublicPath(path string) bool {
 	switch path {
-	case "/health", "/api/v1/health", "/api/v1/auth/oidc/config":
+	case "/health", "/api/v1/health", "/api/v1/auth/oidc/config", "/api/v1/auth/oidc/token":
 		return true
 	default:
 		return strings.HasPrefix(path, "/api/v1/media/")

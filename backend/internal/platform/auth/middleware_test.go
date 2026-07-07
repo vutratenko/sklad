@@ -16,7 +16,7 @@ func TestMiddleware_HealthBypassWithoutToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	for _, path := range []string{"/health", "/api/v1/health", "/api/v1/auth/oidc/config"} {
+	for _, path := range []string{"/health", "/api/v1/health", "/api/v1/auth/oidc/config", "/api/v1/auth/oidc/token"} {
 		called = false
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()

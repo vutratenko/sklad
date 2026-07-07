@@ -17,8 +17,8 @@ import (
 	stockpg "github.com/vutratenko/sklad/internal/modules/stockview/infrastructure/postgres"
 	syncapp "github.com/vutratenko/sklad/internal/modules/sync/application"
 	syncpg "github.com/vutratenko/sklad/internal/modules/sync/infrastructure/postgres"
-	toppg "github.com/vutratenko/sklad/internal/modules/topology/infrastructure/postgres"
 	topologyapp "github.com/vutratenko/sklad/internal/modules/topology/application"
+	toppg "github.com/vutratenko/sklad/internal/modules/topology/infrastructure/postgres"
 	"github.com/vutratenko/sklad/internal/platform/auth"
 	"github.com/vutratenko/sklad/internal/platform/config"
 	"github.com/vutratenko/sklad/internal/platform/db"
@@ -85,6 +85,7 @@ func main() {
 	mux.Handle("GET /api/v1/health", healthHandler)
 	mux.Handle("GET /api/v1/media/{file}", http.StripPrefix("/api/v1/media/", http.FileServer(http.Dir(mediaStorage.Dir()))))
 	mux.HandleFunc("GET /api/v1/auth/oidc/config", auth.OIDCConfigHandler(cfg))
+	mux.HandleFunc("POST /api/v1/auth/oidc/token", auth.OIDCTokenHandler(cfg))
 	h.Register(mux)
 
 	validator := auth.NewValidator(cfg)

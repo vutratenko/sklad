@@ -6,6 +6,7 @@ import {
   hasOAuthCallback,
   selectAuthToken,
   setAccessToken,
+  tokenEndpoint,
 } from './auth.js';
 
 function memoryStorage() {
@@ -63,5 +64,21 @@ describe('OAuth callback helpers', () => {
       { redirect_uri: 'https://sklad.example.com/oauth/callback' },
       { origin: 'https://sklad.example.com', pathname: '/' },
     )).toBe('https://sklad.example.com/');
+  });
+});
+
+describe('tokenEndpoint', () => {
+  it('keeps token exchange same-origin even when a cached config has the old provider URL', () => {
+    expect(tokenEndpoint(
+      { token_endpoint: 'https://cloud.sion2k.ru/apps/oauth2/api/v1/token' },
+      { origin: 'https://sklad.sion2k.ru' },
+    )).toBe('/api/v1/auth/oidc/token');
+  });
+
+  it('uses local API token endpoint from backend config', () => {
+    expect(tokenEndpoint(
+      { token_endpoint: '/api/v1/auth/oidc/token' },
+      { origin: 'https://sklad.sion2k.ru' },
+    )).toBe('/api/v1/auth/oidc/token');
   });
 });

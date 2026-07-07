@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/vutratenko/sklad/internal/platform/config"
 )
 
 func TestStaticValidator_ValidToken(t *testing.T) {
@@ -163,5 +166,81 @@ func TestMiddleware_PublicOIDCConfig(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if !called || rec.Code != http.StatusOK {
 		t.Fatalf("expected public oidc config, called=%v code=%d", called, rec.Code)
+	}
+}
+
+func TestOIDCConfigHandler_ReturnsLocalTokenEndpoint(t *testing.T) {
+	cfg := &config.Config{
+		AppEnv:       "production",
+		OIDCIssuer:   "https://cloud.test",
+		OIDCClientID: "sklad-client",
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/config", nil)
+	rec := httptest.NewRecorder()
+
+	OIDCConfigHandler(cfg).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body OIDCConfigResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.TokenEndpoint != LocalTokenEndpoint {
+		t.Fatalf("expected local token endpoint, got %q", body.TokenEndpoint)
+	}
+}
+
+func TestOIDCTokenHandler_ExchangesCodeThroughProvider(t *testing.T) {
+	var got url.Values
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/apps/oauth2/api/v1/token" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		got = r.Form
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"opaque-access","token_type":"Bearer"}`))
+	}))
+	defer provider.Close()
+
+	cfg := &config.Config{
+		AppEnv:           "production",
+		OIDCIssuer:       provider.URL,
+		OIDCClientID:     "sklad-client",
+		OIDCClientSecret: "client-secret",
+	}
+	form := url.Values{
+		"code":          {"auth-code"},
+		"redirect_uri":  {"https://sklad.test/oauth/callback"},
+		"code_verifier": {"pkce-verifier"},
+	}
+	req := httptest.NewRequest(http.MethodPost, LocalTokenEndpoint, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	OIDCTokenHandler(cfg).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got.Get("client_secret") != "client-secret" {
+		t.Fatalf("expected client_secret forwarded to provider")
+	}
+	if got.Get("client_id") != "sklad-client" || got.Get("code") != "auth-code" || got.Get("code_verifier") != "pkce-verifier" {
+		t.Fatalf("unexpected provider form: %v", got)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["access_token"] != "opaque-access" {
+		t.Fatalf("unexpected token response: %v", body)
 	}
 }

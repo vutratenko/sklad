@@ -14,6 +14,7 @@ type Config struct {
 	AuthDevBypass    bool
 	OIDCIssuer       string
 	OIDCClientID     string
+	OIDCClientSecret string
 	OIDCJWKSURL      string
 	OIDCUserInfoURL  string
 	OIDCUserInfoHost string
@@ -43,6 +44,7 @@ func Load() (*Config, error) {
 		AuthDevBypass:    viper.GetBool("AUTH_DEV_BYPASS"),
 		OIDCIssuer:       viper.GetString("OIDC_ISSUER"),
 		OIDCClientID:     viper.GetString("OIDC_CLIENT_ID"),
+		OIDCClientSecret: viper.GetString("OIDC_CLIENT_SECRET"),
 		OIDCJWKSURL:      viper.GetString("OIDC_JWKS_URL"),
 		OIDCUserInfoURL:  viper.GetString("OIDC_USERINFO_URL"),
 		OIDCUserInfoHost: viper.GetString("OIDC_USERINFO_HOST"),

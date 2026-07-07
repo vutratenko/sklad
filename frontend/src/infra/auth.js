@@ -1,6 +1,7 @@
 const TOKEN_KEY = 'sklad_access_token';
 const AUTH_CONFIG_KEY = 'sklad_auth_config';
 const REDIRECT_URI_KEY = 'sklad_oauth_redirect_uri';
+const LOCAL_TOKEN_ENDPOINT = '/api/v1/auth/oidc/token';
 const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 let tokenStorage = globalThis.localStorage;
@@ -56,6 +57,19 @@ export function setAccessToken(token) {
 
 export function selectAuthToken(tokenResponse) {
   return tokenResponse?.access_token || tokenResponse?.id_token || '';
+}
+
+export function tokenEndpoint(config, location = window.location) {
+  const endpoint = config?.token_endpoint || LOCAL_TOKEN_ENDPOINT;
+  try {
+    const url = new URL(endpoint, location.origin);
+    if (url.origin !== location.origin) {
+      return LOCAL_TOKEN_ENDPOINT;
+    }
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return LOCAL_TOKEN_ENDPOINT;
+  }
 }
 
 export function hasOAuthCallback(search = window.location.search) {
@@ -134,7 +148,7 @@ export async function handleOAuthCallback(code) {
     client_id: config.client_id,
     code_verifier: verifier,
   });
-  const res = await fetch(config.token_endpoint, {
+  const res = await fetch(tokenEndpoint(config), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
