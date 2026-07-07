@@ -243,6 +243,7 @@ label.nav-btn:focus-within {
 .chip-link {
   display: inline-flex;
   align-items: center;
+  gap: var(--space-2);
   min-height: 2rem;
   padding: 0.32rem 0.7rem;
   border: 1px solid var(--color-border);
@@ -254,6 +255,16 @@ label.nav-btn:focus-within {
   font-weight: 600;
   line-height: 1.1;
   text-decoration: none;
+}
+
+.chip-count {
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-2);
+  background: var(--color-surface-3);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .chip-link:hover {

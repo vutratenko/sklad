@@ -4,9 +4,9 @@ import { stockedWarehouses } from './home.js';
 describe('home warehouse chips', () => {
   it('returns warehouses that have at least one stock unit', () => {
     const stocks = [
-      { warehouse_id: 'wh-2', warehouse: 'Архив', quantity: 3 },
-      { warehouse_id: 'wh-1', warehouse: 'Кухня', quantity: 0 },
-      { warehouse_id: 'wh-3', warehouse: 'Запасной', quantity: 1 },
+      { sku_id: 'sku-a', warehouse_id: 'wh-2', warehouse: 'Архив', quantity: 3 },
+      { sku_id: 'sku-b', warehouse_id: 'wh-1', warehouse: 'Кухня', quantity: 0 },
+      { sku_id: 'sku-c', warehouse_id: 'wh-3', warehouse: 'Запасной', quantity: 1 },
     ];
     const warehouses = [
       { id: 'wh-1', name: 'Кухня' },
@@ -14,19 +14,31 @@ describe('home warehouse chips', () => {
     ];
 
     expect(stockedWarehouses(stocks, warehouses)).toEqual([
-      { id: 'wh-2', name: 'Архив' },
-      { id: 'wh-3', name: 'Запасной' },
+      { id: 'wh-2', name: 'Архив', skuCount: 1, unitCount: 3 },
+      { id: 'wh-3', name: 'Запасной', skuCount: 1, unitCount: 1 },
     ]);
   });
 
   it('deduplicates warehouses with multiple stock rows', () => {
     const stocks = [
-      { warehouse_id: 'wh-1', warehouse: 'Кухня', quantity: 1 },
-      { warehouse_id: 'wh-1', warehouse: 'Кухня', quantity: 5 },
+      { sku_id: 'sku-1', warehouse_id: 'wh-1', warehouse: 'Кухня', quantity: 1 },
+      { sku_id: 'sku-1', warehouse_id: 'wh-1', warehouse: 'Кухня', quantity: 5 },
     ];
 
     expect(stockedWarehouses(stocks, [{ id: 'wh-1', name: 'Кухня' }])).toEqual([
-      { id: 'wh-1', name: 'Кухня' },
+      { id: 'wh-1', name: 'Кухня', skuCount: 1, unitCount: 6 },
+    ]);
+  });
+
+  it('counts distinct SKUs per warehouse', () => {
+    const stocks = [
+      { sku_id: 'sku-1', warehouse_id: 'wh-1', warehouse: 'Кухня', quantity: 2 },
+      { sku_id: 'sku-2', warehouse_id: 'wh-1', warehouse: 'Кухня', quantity: 4 },
+      { sku_id: 'sku-3', warehouse_id: 'wh-1', warehouse: 'Кухня', quantity: 0 },
+    ];
+
+    expect(stockedWarehouses(stocks, [{ id: 'wh-1', name: 'Кухня' }])).toEqual([
+      { id: 'wh-1', name: 'Кухня', skuCount: 2, unitCount: 6 },
     ]);
   });
 });
