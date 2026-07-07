@@ -4,19 +4,25 @@ import QRCode from 'qrcode';
 const A4 = { width: 210, height: 297 };
 const LABEL = {
   margin: 10,
-  qrSize: 30,
-  gapX: 6,
-  gapY: 8,
-  textHeight: 8,
+  qrSize: 20,
+  gapX: 4,
+  gapY: 4,
+  textHeight: 6,
 };
 
 export function primaryBarcode(sku) {
   return String(sku?.barcodes?.[0] || '').trim();
 }
 
-export function skuLabelFileName(sku) {
-  const code = primaryBarcode(sku) || 'sku';
-  return `sklad-${code}.pdf`;
+export function skuLabelFileName(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return 'sklad-qr-labels.pdf';
+  }
+  if (entries.length === 1) {
+    const code = primaryBarcode(entries[0].sku) || 'sku';
+    return `sklad-${code}.pdf`;
+  }
+  return 'sklad-qr-labels.pdf';
 }
 
 export function buildA4QRLabelLayout(page = A4, label = LABEL) {
@@ -31,13 +37,32 @@ export function buildA4QRLabelLayout(page = A4, label = LABEL) {
         x: label.margin + col * cellWidth,
         y: label.margin + row * cellHeight,
         qrSize: label.qrSize,
-        textY: label.margin + row * cellHeight + label.qrSize + 2,
+        textY: label.margin + row * cellHeight + label.qrSize + 1,
         textWidth: label.qrSize,
         textHeight: label.textHeight,
       });
     }
   }
   return labels;
+}
+
+export function flattenLabelEntries(entries) {
+  const flat = [];
+  for (const entry of entries || []) {
+    const count = Math.max(0, Number(entry.count) || 0);
+    if (count === 0) continue;
+    const code = primaryBarcode(entry.sku);
+    if (!code) {
+      throw new Error(`У SKU «${entry.sku?.name || 'без названия'}» нет штрихкода`);
+    }
+    for (let i = 0; i < count; i += 1) {
+      flat.push({ sku: entry.sku, code });
+    }
+  }
+  if (flat.length === 0) {
+    throw new Error('Выберите хотя бы один QR код');
+  }
+  return flat;
 }
 
 export function createTextImageDataURL(text, options = {}) {
@@ -49,7 +74,7 @@ export function createTextImageDataURL(text, options = {}) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = '#111317';
-  ctx.font = `${options.fontWeight || 600} ${options.fontSize || 20}px ${options.fontFamily || 'Inter, Arial, sans-serif'}`;
+  ctx.font = `${options.fontWeight || 600} ${options.fontSize || 16}px ${options.fontFamily || 'Inter, Arial, sans-serif'}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
@@ -67,7 +92,7 @@ export function createTextImageDataURL(text, options = {}) {
   }
   if (current) lines.push(current);
   const visible = lines.slice(0, 2);
-  const lineHeight = options.lineHeight || 24;
+  const lineHeight = options.lineHeight || 18;
   const startY = height / 2 - ((visible.length - 1) * lineHeight) / 2;
   visible.forEach((line, index) => {
     ctx.fillText(line, width / 2, startY + index * lineHeight, width - 8);
@@ -76,31 +101,52 @@ export function createTextImageDataURL(text, options = {}) {
   return canvas.toDataURL('image/png');
 }
 
-export async function generateSKUQRCodePDF(sku, options = {}) {
-  const code = primaryBarcode(sku);
-  if (!code) {
-    throw new Error('У SKU нет штрихкода');
-  }
-
-  const doc = options.doc || new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const qrDataURL = await (options.qrFactory || QRCode.toDataURL)(code, {
+async function qrDataURLForCode(code, qrFactory) {
+  return (qrFactory || QRCode.toDataURL)(code, {
     errorCorrectionLevel: 'M',
     margin: 1,
     width: 256,
   });
-  const labels = buildA4QRLabelLayout(options.page, options.label);
-  const name = String(sku.name || code);
-  const textImageFactory = options.textImageFactory || createTextImageDataURL;
+}
 
-  labels.forEach((label) => {
-    doc.addImage(qrDataURL, 'PNG', label.x, label.y, label.qrSize, label.qrSize);
+export async function generateBatchSKUQRCodePDF(entries, options = {}) {
+  const flat = flattenLabelEntries(entries);
+  const doc = options.doc || new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const labels = buildA4QRLabelLayout(options.page, options.label);
+  const textImageFactory = options.textImageFactory || createTextImageDataURL;
+  const qrCache = new Map();
+
+  for (let index = 0; index < flat.length; index += 1) {
+    const pageIndex = index % labels.length;
+    if (index > 0 && pageIndex === 0) {
+      doc.addPage();
+    }
+    const item = flat[index];
+    const pos = labels[pageIndex];
+    if (!qrCache.has(item.code)) {
+      qrCache.set(item.code, await qrDataURLForCode(item.code, options.qrFactory));
+    }
+    const qrDataURL = qrCache.get(item.code);
+    const name = String(item.sku?.name || item.code);
+
+    doc.addImage(qrDataURL, 'PNG', pos.x, pos.y, pos.qrSize, pos.qrSize);
     const textDataURL = textImageFactory(name, {
       width: 256,
-      height: 72,
+      height: 48,
+      fontSize: 14,
+      lineHeight: 16,
     });
-    doc.addImage(textDataURL, 'PNG', label.x, label.textY, label.textWidth, label.textHeight);
-  });
+    doc.addImage(textDataURL, 'PNG', pos.x, pos.textY, pos.textWidth, pos.textHeight);
+  }
 
-  doc.save(skuLabelFileName(sku));
-  return { code, labels: labels.length };
+  doc.save(skuLabelFileName(entries));
+  return { labels: flat.length, pages: Math.ceil(flat.length / labels.length) };
+}
+
+export async function generateSKUQRCodePDF(sku, options = {}) {
+  return generateBatchSKUQRCodePDF([{ sku, count: labelsPerPage(options) }], options);
+}
+
+function labelsPerPage(options = {}) {
+  return buildA4QRLabelLayout(options.page, options.label).length;
 }

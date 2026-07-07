@@ -1,5 +1,6 @@
 import { initRouter } from './app/router.js';
 import { bindMovementWizard, renderMovementWizard } from './app/movement-wizard.js';
+import { bindSkuPage, renderSkuPage } from './app/sku-page.js';
 import { stockedWarehouses } from './app/home.js';
 import { isNavViewVisible } from './app/navigation.js';
 import {
@@ -12,16 +13,8 @@ import {
   updateLocation,
   updateWarehouse,
 } from './app/views/topology.js';
-import {
-  createSKU,
-  deleteSKU,
-  loadSKUs,
-  lookupScanCode,
-  updateSKU,
-  uploadPhoto,
-} from './app/views/catalog.js';
+import { lookupScanCode } from './app/views/catalog.js';
 import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue } from './app/views.js';
-import { generateSKUQRCodePDF } from './app/sku-label-pdf.js';
 import { isCameraScanSupported, parseQrScanValue, startCameraScan } from './app/views/scan.js';
 import { OPERATION_TYPES, submitMovement } from './app/views/movements.js';
 import { SyncEngine, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
@@ -295,110 +288,14 @@ async function refreshHomePage() {
   bindHomeHandlers();
 }
 
-function renderSKUs(items) {
-  const list = items.map((s) => `
-    <div class="card sku-card" data-sku-id="${s.id}">
-      <div class="sku-row">
-        ${skuPhotoSrc(s) ? `<img class="sku-photo" src="${escapeHtml(skuPhotoSrc(s))}" alt="" />` : '<div class="sku-photo sku-photo-empty">нет фото</div>'}
-        <div class="sku-info">
-          <h3>${escapeHtml(s.name)}</h3>
-          <div class="meta">${escapeHtml(s.category || '')} · ${escapeHtml(s.unit)} · ${s.is_active === false ? 'неактивен' : 'активен'}</div>
-          ${s.description ? `<div class="meta">${escapeHtml(s.description)}</div>` : ''}
-          <div class="meta">Штрихкод: ${escapeHtml((s.barcodes || [])[0] || 'не назначен')}</div>
-        </div>
-      </div>
-      <div class="form-row" style="flex-direction:row;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap">
-        <button class="nav-btn" data-action="edit-sku" data-id="${s.id}">Изменить</button>
-        <button class="nav-btn" data-action="del-sku" data-id="${s.id}">Удалить</button>
-        <button class="nav-btn" data-action="print-sku-qr" data-id="${s.id}">PDF QR</button>
-        <label class="nav-btn" style="cursor:pointer">
-          Фото
-          <input type="file" accept="image/*" hidden data-action="upload-photo" data-id="${s.id}" />
-        </label>
-      </div>
-    </div>
-  `).join('');
-
-  return `
-    <div class="card">
-      <h3>Новый SKU</h3>
-      <div class="form-row"><label>Название</label><input id="sku-name" placeholder="Томатная паста" /></div>
-      <div class="form-row"><label>Категория</label><input id="sku-category" placeholder="консервы" /></div>
-      <div class="form-row"><label>Единица</label><input id="sku-unit" placeholder="шт" value="шт" /></div>
-      <div class="form-row"><label>Описание</label><input id="sku-desc" placeholder="400г" /></div>
-      <button class="primary" id="sku-create">Создать SKU</button>
-    </div>
-    <div class="card">
-      <div class="form-row"><label>Поиск</label><input id="sku-search" placeholder="название, категория или штрихкод" /></div>
-    </div>
-    ${list || '<p class="empty">Нет SKU</p>'}
-  `;
-}
-
-function bindSKUHandlers() {
-  document.getElementById('sku-create')?.addEventListener('click', async () => {
-    const name = document.getElementById('sku-name').value.trim();
-    const category = document.getElementById('sku-category').value.trim();
-    const unit = document.getElementById('sku-unit').value.trim() || 'шт';
-    const description = document.getElementById('sku-desc').value.trim();
-    if (!name) return;
-    await createSKU({ name, category, unit, description });
-    main.innerHTML = renderSKUs(await loadSKUs());
-    bindSKUHandlers();
-  });
-
-  document.getElementById('sku-search')?.addEventListener('input', async (e) => {
-    main.innerHTML = renderSKUs(await loadSKUs(e.target.value.trim()));
-    bindSKUHandlers();
-    document.getElementById('sku-search').value = e.target.value;
-    document.getElementById('sku-search')?.focus();
-  });
-
-  main.querySelectorAll('[data-action="del-sku"]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Удалить SKU?')) return;
-      await deleteSKU(btn.dataset.id);
-      main.innerHTML = renderSKUs(await loadSKUs());
-      bindSKUHandlers();
-    });
-  });
-
-  main.querySelectorAll('[data-action="edit-sku"]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const name = prompt('Новое название SKU:');
-      if (!name) return;
-      await updateSKU(btn.dataset.id, { name });
-      main.innerHTML = renderSKUs(await loadSKUs());
-      bindSKUHandlers();
-    });
-  });
-
-  main.querySelectorAll('[data-action="upload-photo"]').forEach((input) => {
-    input.addEventListener('change', async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      try {
-        await uploadPhoto(input.dataset.id, file);
-        syncEngine.sync();
-        main.innerHTML = renderSKUs(await loadSKUs());
-        bindSKUHandlers();
-      } catch (err) {
-        alert(err.message);
-      }
-    });
-  });
-
-  main.querySelectorAll('[data-action="print-sku-qr"]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const items = await loadSKUs();
-      const sku = items.find((s) => s.id === btn.dataset.id);
-      if (!sku) return;
-      try {
-        await generateSKUQRCodePDF(sku);
-      } catch (err) {
-        alert(err.message);
-      }
-    });
+async function refreshSkuPage(searchQuery) {
+  const q = typeof searchQuery === 'string'
+    ? searchQuery
+    : (document.getElementById('sku-search')?.value.trim() ?? '');
+  main.innerHTML = renderSkuPage(await loadSKUsView(q), { searchQuery: q });
+  bindSkuPage(main, {
+    syncEngine,
+    onRefresh: refreshSkuPage,
   });
 }
 
@@ -768,15 +665,8 @@ async function renderRoute(route) {
       await refreshMovementsPage(pending);
       refreshDataInBackground(async () => refreshMovementsPage(getMovementFiltersFromDOM()));
     } else if (route.path === '/skus') {
-      main.innerHTML = renderSKUs(await loadSKUsView());
-      bindSKUHandlers();
-      refreshDataInBackground(async () => {
-        const q = document.getElementById('sku-search')?.value.trim() || '';
-        main.innerHTML = renderSKUs(await loadSKUsView(q));
-        bindSKUHandlers();
-        const input = document.getElementById('sku-search');
-        if (input) input.value = q;
-      });
+      await refreshSkuPage();
+      refreshDataInBackground(refreshSkuPage);
     } else if (route.path === '/scan') {
       const autostart = sessionStorage.getItem('sklad_scan_autostart') === '1';
       if (autostart) sessionStorage.removeItem('sklad_scan_autostart');
