@@ -583,12 +583,6 @@ function bindWarehouseHandlers() {
 }
 
 function renderHome(warehouseChips = []) {
-  let authInfo = 'Nextcloud OIDC: используйте кнопку «Войти».';
-  if (currentUser) {
-    authInfo = 'Вы вошли через Nextcloud OIDC.';
-  } else if (authConfig?.dev_bypass) {
-    authInfo = 'Режим разработки: auth bypass активен (ADR-007).';
-  }
   const chips = warehouseChips.map((warehouse) => `
     <a class="chip-link" href="/stocks" data-action="home-stock-wh" data-warehouse-id="${escapeHtml(warehouse.id)}">
       <span class="chip-label">${escapeHtml(warehouse.name)}</span>
@@ -596,11 +590,12 @@ function renderHome(warehouseChips = []) {
     </a>
   `).join('');
   return `
-    <div class="card">
-      <h3>Sklad WMS</h3>
-      <div class="meta">${authInfo}</div>
-      ${currentUser ? `<div class="meta">Пользователь: ${escapeHtml(currentUser.name || currentUser.id)}</div>` : ''}
-    </div>
+    <a class="home-scan-btn" href="/scan" data-action="home-scan-qr">
+      <span class="home-scan-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M4 7V5a1 1 0 0 1 1-1h2M4 17v2a1 1 0 0 0 1 1h2m10-16h2a1 1 0 0 1 1 1v2m0 10v2a1 1 0 0 1-1 1h-2M8 12h8M12 8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </span>
+      <span class="home-scan-label">Сканировать QR</span>
+    </a>
     <div class="card">
       <h3>Склады с остатками</h3>
       ${chips ? `<div class="chip-list">${chips}</div>` : '<p class="empty">Нет складов с остатками</p>'}
@@ -615,6 +610,12 @@ function bindHomeHandlers() {
       sessionStorage.setItem('sklad_stock_filters', JSON.stringify({ warehouse_id: link.dataset.warehouseId }));
       router?.navigate('/stocks');
     });
+  });
+
+  main.querySelector('[data-action="home-scan-qr"]')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    sessionStorage.setItem('sklad_scan_autostart', '1');
+    router?.navigate('/scan');
   });
 }
 
@@ -766,8 +767,10 @@ async function renderRoute(route) {
         if (input) input.value = q;
       });
     } else if (route.path === '/scan') {
+      const autostart = sessionStorage.getItem('sklad_scan_autostart') === '1';
+      if (autostart) sessionStorage.removeItem('sklad_scan_autostart');
       main.innerHTML = renderScan();
-      bindScanHandlers();
+      bindScanHandlers({ autostart });
     } else if (route.path === '/sync') {
       main.innerHTML = renderSyncPanel(await loadSyncQueue());
       bindSyncHandlers();
@@ -810,7 +813,7 @@ function bindLoginHandlers() {
   }
 }
 
-function bindScanHandlers() {
+function bindScanHandlers({ autostart = false } = {}) {
   const input = document.getElementById('barcode-input');
   const resultEl = document.getElementById('scan-result');
   const video = document.getElementById('scan-video');
@@ -842,7 +845,18 @@ function bindScanHandlers() {
     if (e.key === 'Enter') doSearch();
   });
 
-  cameraBtn?.addEventListener('click', async () => {
+  cameraBtn?.addEventListener('click', () => {
+    void startQrScan();
+  });
+
+  stopBtn?.addEventListener('click', () => {
+    stopCameraScan?.();
+    stopCameraScan = null;
+    stopBtn.hidden = true;
+    video.hidden = true;
+  });
+
+  async function startQrScan() {
     try {
       resultEl.innerHTML = '';
       video.hidden = false;
@@ -855,14 +869,11 @@ function bindScanHandlers() {
     } catch (err) {
       resultEl.innerHTML = `<p class="empty">${escapeHtml(err.message)}</p>`;
     }
-  });
+  }
 
-  stopBtn?.addEventListener('click', () => {
-    stopCameraScan?.();
-    stopCameraScan = null;
-    stopBtn.hidden = true;
-    video.hidden = true;
-  });
+  if (autostart && cameraBtn && !cameraBtn.disabled) {
+    void startQrScan();
+  }
 }
 
 window.addEventListener('online', updateNetworkStatus);
