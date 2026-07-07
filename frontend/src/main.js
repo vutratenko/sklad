@@ -292,7 +292,8 @@ async function refreshSkuPage(searchQuery) {
   const q = typeof searchQuery === 'string'
     ? searchQuery
     : (document.getElementById('sku-search')?.value.trim() ?? '');
-  main.innerHTML = renderSkuPage(await loadSKUsView(q), { searchQuery: q });
+  const [items, allSkus] = await Promise.all([loadSKUsView(q), loadSKUsView('')]);
+  main.innerHTML = renderSkuPage(items, { searchQuery: q, allSkus });
   bindSkuPage(main, {
     syncEngine,
     onRefresh: refreshSkuPage,

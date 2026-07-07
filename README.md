@@ -1,13 +1,16 @@
-# Sklad — домашняя WMS
+<p align="center">
+  <img src="docs/sklad-logo.png" alt="Sklad" width="420" />
+</p>
 
 Self-hosted система складского учёта для домашних запасов (консервы, кладовка, кухня).
 
-## MVP возможности
+## Возможности
 
-- Каталог SKU с фото и штрихкодами
+- Каталог SKU с фото, штрихкодами и печатью QR-этикеток
 - Топология: склады и места хранения
 - Остатки и журнал движений (приход / расход / перемещение / корректировка)
-- Offline-first PWA с IndexedDB и sync push/pull
+- Offline-first PWA с IndexedDB, очередью синхронизации и кэшем фото
+- Сканирование QR/штрихкодов с камеры
 - Nextcloud OIDC (prod) или dev bypass (локально)
 
 ## Быстрый старт
@@ -70,7 +73,7 @@ docs/        Архитектура, ADR, API
 
 ## Deploy (Kubernetes / Helm)
 
-Образы и Helm chart публикуются в GHCR при git tag `v*` (например `v0.1.0`).
+Образы и Helm chart публикуются в GHCR при git tag `v*` (например `v0.1.34`).
 
 ```bash
 # 1. Создать Secret с credentials (PostgreSQL + OIDC)
@@ -84,7 +87,7 @@ kubectl create secret generic sklad-api-secrets \
   --from-literal=SESSION_SECRET='replace-with-random-32-byte-secret'
 
 # 2. Установить chart из GHCR
-helm install sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.0 \
+helm install sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.34 \
   --namespace sklad \
   --set api.existingSecret=sklad-api-secrets
 ```
@@ -94,7 +97,7 @@ helm install sklad oci://ghcr.io/vutratenko/charts/sklad --version 0.1.0 \
 ### Первый релиз (maintainer)
 
 1. GitHub → Settings → Actions → **Workflow permissions: Read and write**
-2. Создать tag: `git tag v0.1.0 && git push origin v0.1.0`
+2. Создать tag: `git tag v0.1.34 && git push origin v0.1.34`
 3. Проверить packages: https://github.com/vutratenko/sklad/pkgs
 
 CI на PR/main: `.github/workflows/ci.yml` (build, tests, docker build без push).  

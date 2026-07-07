@@ -12,7 +12,21 @@ const pageState = {
   qrPrintExpanded: false,
   selectedSkuId: null,
   qrCounts: {},
+  qrSearchQuery: '',
 };
+
+export function filterSkusForQrSearch(skus, query, selectedIds = new Set()) {
+  const needle = String(query || '').trim().toLowerCase();
+  if (!needle) return [];
+  return (skus || [])
+    .filter((sku) => !selectedIds.has(sku.id))
+    .filter((sku) => {
+      const name = (sku.name || '').toLowerCase();
+      const id = String(sku.id || '').toLowerCase();
+      return name.includes(needle) || id.includes(needle);
+    })
+    .slice(0, 8);
+}
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -53,28 +67,62 @@ function renderNewSkuPanel() {
   });
 }
 
-function renderQrPrintPanel(items) {
-  const rows = items.map((sku) => {
-    const checked = (pageState.qrCounts[sku.id] || 0) > 0;
-    const count = pageState.qrCounts[sku.id] || 1;
+function renderQrSelectedRows(allSkus) {
+  const byId = Object.fromEntries((allSkus || []).map((sku) => [sku.id, sku]));
+  const selectedIds = Object.keys(pageState.qrCounts);
+  if (!selectedIds.length) {
+    return '<p class="empty">Добавьте SKU через поиск</p>';
+  }
+
+  return selectedIds.map((skuId) => {
+    const sku = byId[skuId];
+    if (!sku) return '';
+    const count = pageState.qrCounts[skuId] || 1;
     const barcode = (sku.barcodes || [])[0] || '';
     return `
-      <label class="sku-qr-row">
-        <input type="checkbox" data-action="qr-toggle" data-id="${sku.id}"${checked ? ' checked' : ''}${barcode ? '' : ' disabled title="Нет штрихкода"'} />
+      <div class="sku-qr-row">
         <span class="sku-qr-row-name">${escapeHtml(sku.name)}</span>
         <span class="meta sku-qr-row-code">${escapeHtml(barcode || 'нет кода')}</span>
-        <input type="number" min="1" max="999" value="${count}" data-action="qr-count" data-id="${sku.id}"${checked ? '' : ' disabled'} />
-      </label>
+        <input type="number" min="1" max="999" value="${count}" data-action="qr-count" data-id="${sku.id}" />
+        <button type="button" class="nav-btn" data-action="qr-remove" data-id="${sku.id}" aria-label="Удалить">×</button>
+      </div>
     `;
   }).join('');
+}
 
+function renderQrSearchSuggestions(allSkus) {
+  const selectedIds = new Set(Object.keys(pageState.qrCounts));
+  const matches = filterSkusForQrSearch(allSkus, pageState.qrSearchQuery, selectedIds);
+  if (!pageState.qrSearchQuery.trim()) return '';
+  if (!matches.length) {
+    return '<div class="sku-qr-suggest-empty meta">Ничего не найдено</div>';
+  }
+
+  return `
+    <div class="sku-qr-suggest-list" role="listbox">
+      ${matches.map((sku) => `
+        <button type="button" class="sku-qr-suggest-item" data-action="qr-pick" data-id="${sku.id}">
+          <span class="sku-qr-suggest-name">${escapeHtml(sku.name)}</span>
+          <span class="meta">${escapeHtml(sku.id)}</span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderQrPrintPanel(allSkus) {
   return renderCollapsiblePanel({
     id: 'sku-qr-panel',
     title: 'Печать QR кодов',
     expanded: pageState.qrPrintExpanded,
     bodyHtml: `
-      <p class="sku-panel-hint">Выберите SKU и количество QR на странице. Размер QR — 2 см, под кодом название.</p>
-      <div class="sku-qr-list">${rows || '<p class="empty">Нет SKU</p>'}</div>
+      <p class="sku-panel-hint">Найдите SKU по названию или ID, добавьте в список и укажите количество QR. Размер QR — 2 см, под кодом название.</p>
+      <div class="form-row sku-qr-search-wrap">
+        <label for="sku-qr-search">Поиск SKU</label>
+        <input id="sku-qr-search" type="search" autocomplete="off" placeholder="название или ID" value="${escapeHtml(pageState.qrSearchQuery)}" />
+        ${renderQrSearchSuggestions(allSkus)}
+      </div>
+      <div class="sku-qr-list">${renderQrSelectedRows(allSkus)}</div>
       <button class="primary" id="sku-qr-print" type="button">Печать</button>
     `,
   });
@@ -131,19 +179,25 @@ function renderSkuCard(sku) {
   `;
 }
 
-export function renderSkuPage(items, { searchQuery = '' } = {}) {
+export function renderSkuPage(items, { searchQuery = '', allSkus = [] } = {}) {
   const selected = items.find((item) => item.id === pageState.selectedSkuId) || null;
   const list = items.map((sku) => renderSkuCard(sku)).join('');
 
   return `
     ${renderNewSkuPanel()}
-    ${renderQrPrintPanel(items)}
+    ${renderQrPrintPanel(allSkus)}
     <div class="card">
       <div class="form-row"><label>Поиск</label><input id="sku-search" placeholder="название, категория или штрихкод" value="${escapeHtml(searchQuery)}" /></div>
     </div>
     ${selected ? renderSkuDetail(selected) : ''}
     ${list || '<p class="empty">Нет SKU</p>'}
   `;
+}
+
+function restoreFocus(activeId) {
+  if (!activeId) return;
+  const el = document.getElementById(activeId);
+  el?.focus();
 }
 
 export function bindSkuPage(root, { syncEngine, onRefresh }) {
@@ -179,6 +233,37 @@ export function bindSkuPage(root, { syncEngine, onRefresh }) {
       input.value = e.target.value;
       input.focus();
     }
+  });
+
+  const qrSearchInput = root.querySelector('#sku-qr-search');
+  qrSearchInput?.addEventListener('input', async (e) => {
+    const activeId = document.activeElement?.id;
+    pageState.qrSearchQuery = e.target.value;
+    await onRefresh(searchInput?.value.trim() || '');
+    restoreFocus(activeId);
+    const input = document.getElementById('sku-qr-search');
+    if (input) {
+      input.value = pageState.qrSearchQuery;
+      input.focus();
+    }
+  });
+
+  root.querySelectorAll('[data-action="qr-pick"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const skuId = btn.dataset.id;
+      if (!skuId) return;
+      pageState.qrCounts[skuId] = pageState.qrCounts[skuId] || 1;
+      pageState.qrSearchQuery = '';
+      await onRefresh(searchInput?.value.trim() || '');
+      document.getElementById('sku-qr-search')?.focus();
+    });
+  });
+
+  root.querySelectorAll('[data-action="qr-remove"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      delete pageState.qrCounts[btn.dataset.id];
+      await onRefresh(searchInput?.value.trim() || '');
+    });
   });
 
   root.querySelectorAll('[data-action="open-sku"]').forEach((btn) => {
@@ -230,18 +315,6 @@ export function bindSkuPage(root, { syncEngine, onRefresh }) {
     });
   });
 
-  root.querySelectorAll('[data-action="qr-toggle"]').forEach((input) => {
-    input.addEventListener('change', async () => {
-      const skuId = input.dataset.id;
-      if (input.checked) {
-        pageState.qrCounts[skuId] = pageState.qrCounts[skuId] || 1;
-      } else {
-        delete pageState.qrCounts[skuId];
-      }
-      await onRefresh(searchInput?.value.trim() || '');
-    });
-  });
-
   root.querySelectorAll('[data-action="qr-count"]').forEach((input) => {
     input.addEventListener('input', () => {
       const skuId = input.dataset.id;
@@ -251,10 +324,12 @@ export function bindSkuPage(root, { syncEngine, onRefresh }) {
   });
 
   root.querySelector('#sku-qr-print')?.addEventListener('click', async () => {
-    const items = await loadSKUs(searchInput?.value.trim() || '');
-    const entries = items
-      .filter((sku) => (pageState.qrCounts[sku.id] || 0) > 0)
-      .map((sku) => ({ sku, count: pageState.qrCounts[sku.id] }));
+    const allItems = await loadSKUs('');
+    const byId = Object.fromEntries(allItems.map((sku) => [sku.id, sku]));
+    const entries = Object.entries(pageState.qrCounts)
+      .filter(([, count]) => count > 0)
+      .map(([skuId, count]) => ({ sku: byId[skuId], count }))
+      .filter((entry) => entry.sku);
     try {
       await generateBatchSKUQRCodePDF(entries);
     } catch (err) {
@@ -268,4 +343,5 @@ export function resetSkuPageStateForTests() {
   pageState.qrPrintExpanded = false;
   pageState.selectedSkuId = null;
   pageState.qrCounts = {};
+  pageState.qrSearchQuery = '';
 }
