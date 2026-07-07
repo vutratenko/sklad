@@ -5,6 +5,7 @@ import {
   flattenLabelEntries,
   generateBatchSKUQRCodePDF,
   generateSKUQRCodePDF,
+  isFinderRegion,
   primaryBarcode,
   QR_LABEL_THEME,
   skuLabelFileName,
@@ -96,7 +97,7 @@ describe('SKU QR label PDF', () => {
     expect(skuLabelFileName([])).toBe('sklad-qr-labels.pdf');
   });
 
-  it('renders QR modules as dots in app theme colors', () => {
+  it('renders readable inverted QR with solid finder modules', () => {
     const arc = vi.fn();
     const fillRect = vi.fn();
     const fill = vi.fn();
@@ -115,12 +116,19 @@ describe('SKU QR label PDF', () => {
     };
     vi.stubGlobal('document', { createElement: () => canvas });
 
+    expect(QR_LABEL_THEME).toEqual({
+      module: '#ffffff',
+      background: '#000000',
+      text: '#111317',
+    });
+    expect(isFinderRegion(0, 0, 21)).toBe(true);
+    expect(isFinderRegion(10, 10, 21)).toBe(false);
+
     const dataUrl = createStyledQrDataURL('000042');
     expect(dataUrl).toBe('data:image/png;base64,styled-qr');
     expect(fillRect).toHaveBeenCalled();
     expect(arc).toHaveBeenCalled();
-    expect(fill).toHaveBeenCalled();
-    expect(ctx.fillStyle).toBe(QR_LABEL_THEME.module);
+    expect(ctx.fillStyle).toBe('#ffffff');
 
     vi.unstubAllGlobals();
   });

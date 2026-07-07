@@ -11,13 +11,40 @@ const LABEL = {
 };
 
 export const QR_LABEL_THEME = {
-  module: '#c8cdd3',
-  background: '#111317',
+  module: '#ffffff',
+  background: '#000000',
   text: '#111317',
 };
 
 export function primaryBarcode(sku) {
   return String(sku?.barcodes?.[0] || '').trim();
+}
+
+export function isFinderRegion(row, col, size) {
+  if (row < 7 && col < 7) return true;
+  if (row < 7 && col >= size - 7) return true;
+  if (row >= size - 7 && col < 7) return true;
+  return false;
+}
+
+export function shouldRenderSolidModule(row, col, size, modules) {
+  if (isFinderRegion(row, col, size)) return true;
+  if (!modules.get(row, col)) return false;
+
+  const alignmentCenters = [];
+  if (size >= 25) {
+    alignmentCenters.push([6, size - 7], [size - 7, 6], [size - 7, size - 7]);
+  } else if (size >= 21) {
+    alignmentCenters.push([size - 7, size - 7]);
+  }
+
+  for (const [centerRow, centerCol] of alignmentCenters) {
+    if (Math.abs(row - centerRow) <= 2 && Math.abs(col - centerCol) <= 2) {
+      return true;
+    }
+  }
+
+  return row === 6 || col === 6;
 }
 
 export function skuLabelFileName(entries) {
@@ -73,9 +100,9 @@ export function flattenLabelEntries(entries) {
 
 export function createStyledQrDataURL(code, options = {}) {
   const theme = { ...QR_LABEL_THEME, ...options.theme };
-  const size = options.width || 256;
-  const marginModules = 2;
-  const qr = QRCode.create(String(code), { errorCorrectionLevel: 'M' });
+  const size = options.width || 384;
+  const marginModules = 4;
+  const qr = QRCode.create(String(code), { errorCorrectionLevel: 'Q' });
   const modules = qr.modules;
   const count = modules.size;
 
@@ -91,7 +118,6 @@ export function createStyledQrDataURL(code, options = {}) {
   ctx.fillRect(0, 0, size, size);
 
   const cellSize = size / (count + marginModules * 2);
-  const dotRadius = cellSize * 0.41;
   ctx.fillStyle = theme.module;
 
   for (let row = 0; row < count; row += 1) {
@@ -99,8 +125,13 @@ export function createStyledQrDataURL(code, options = {}) {
       if (!modules.get(row, col)) continue;
       const x = (col + marginModules + 0.5) * cellSize;
       const y = (row + marginModules + 0.5) * cellSize;
+      if (shouldRenderSolidModule(row, col, count, modules)) {
+        const edge = cellSize - 0.75;
+        ctx.fillRect(x - edge / 2, y - edge / 2, edge, edge);
+        continue;
+      }
       ctx.beginPath();
-      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+      ctx.arc(x, y, cellSize * 0.47, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -149,7 +180,7 @@ async function qrDataURLForCode(code, qrFactory, theme) {
   if (qrFactory) {
     return qrFactory(code);
   }
-  return createStyledQrDataURL(code, { theme, width: 256 });
+  return createStyledQrDataURL(code, { theme, width: 384 });
 }
 
 export async function generateBatchSKUQRCodePDF(entries, options = {}) {
