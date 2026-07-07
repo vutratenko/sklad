@@ -13,7 +13,7 @@ import {
   updateLocation,
   updateWarehouse,
 } from './app/views/topology.js';
-import { lookupScanCode } from './app/views/catalog.js';
+import { loadSKUs, lookupScanCode } from './app/views/catalog.js';
 import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue } from './app/views.js';
 import { isCameraScanSupported, parseQrScanValue, startCameraScan } from './app/views/scan.js';
 import { OPERATION_TYPES, submitMovement } from './app/views/movements.js';
