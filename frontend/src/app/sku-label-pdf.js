@@ -10,6 +10,12 @@ const LABEL = {
   textHeight: 6,
 };
 
+export const QR_LABEL_THEME = {
+  module: '#c8cdd3',
+  background: '#111317',
+  text: '#111317',
+};
+
 export function primaryBarcode(sku) {
   return String(sku?.barcodes?.[0] || '').trim();
 }
@@ -65,7 +71,45 @@ export function flattenLabelEntries(entries) {
   return flat;
 }
 
+export function createStyledQrDataURL(code, options = {}) {
+  const theme = { ...QR_LABEL_THEME, ...options.theme };
+  const size = options.width || 256;
+  const marginModules = 2;
+  const qr = QRCode.create(String(code), { errorCorrectionLevel: 'M' });
+  const modules = qr.modules;
+  const count = modules.size;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Canvas is not available');
+  }
+
+  ctx.fillStyle = theme.background;
+  ctx.fillRect(0, 0, size, size);
+
+  const cellSize = size / (count + marginModules * 2);
+  const dotRadius = cellSize * 0.41;
+  ctx.fillStyle = theme.module;
+
+  for (let row = 0; row < count; row += 1) {
+    for (let col = 0; col < count; col += 1) {
+      if (!modules.get(row, col)) continue;
+      const x = (col + marginModules + 0.5) * cellSize;
+      const y = (row + marginModules + 0.5) * cellSize;
+      ctx.beginPath();
+      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  return canvas.toDataURL('image/png');
+}
+
 export function createTextImageDataURL(text, options = {}) {
+  const theme = { ...QR_LABEL_THEME, ...options.theme };
   const width = options.width || 256;
   const height = options.height || 72;
   const canvas = document.createElement('canvas');
@@ -73,7 +117,7 @@ export function createTextImageDataURL(text, options = {}) {
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#111317';
+  ctx.fillStyle = theme.text;
   ctx.font = `${options.fontWeight || 600} ${options.fontSize || 16}px ${options.fontFamily || 'Inter, Arial, sans-serif'}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -101,12 +145,11 @@ export function createTextImageDataURL(text, options = {}) {
   return canvas.toDataURL('image/png');
 }
 
-async function qrDataURLForCode(code, qrFactory) {
-  return (qrFactory || QRCode.toDataURL)(code, {
-    errorCorrectionLevel: 'M',
-    margin: 1,
-    width: 256,
-  });
+async function qrDataURLForCode(code, qrFactory, theme) {
+  if (qrFactory) {
+    return qrFactory(code);
+  }
+  return createStyledQrDataURL(code, { theme, width: 256 });
 }
 
 export async function generateBatchSKUQRCodePDF(entries, options = {}) {
@@ -114,6 +157,7 @@ export async function generateBatchSKUQRCodePDF(entries, options = {}) {
   const doc = options.doc || new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const labels = buildA4QRLabelLayout(options.page, options.label);
   const textImageFactory = options.textImageFactory || createTextImageDataURL;
+  const theme = { ...QR_LABEL_THEME, ...options.theme };
   const qrCache = new Map();
 
   for (let index = 0; index < flat.length; index += 1) {
@@ -124,7 +168,7 @@ export async function generateBatchSKUQRCodePDF(entries, options = {}) {
     const item = flat[index];
     const pos = labels[pageIndex];
     if (!qrCache.has(item.code)) {
-      qrCache.set(item.code, await qrDataURLForCode(item.code, options.qrFactory));
+      qrCache.set(item.code, await qrDataURLForCode(item.code, options.qrFactory, theme));
     }
     const qrDataURL = qrCache.get(item.code);
     const name = String(item.sku?.name || item.code);
@@ -135,6 +179,7 @@ export async function generateBatchSKUQRCodePDF(entries, options = {}) {
       height: 48,
       fontSize: 14,
       lineHeight: 16,
+      theme,
     });
     doc.addImage(textDataURL, 'PNG', pos.x, pos.textY, pos.textWidth, pos.textHeight);
   }

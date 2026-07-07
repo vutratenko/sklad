@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildA4QRLabelLayout,
+  createStyledQrDataURL,
   flattenLabelEntries,
   generateBatchSKUQRCodePDF,
   generateSKUQRCodePDF,
   primaryBarcode,
+  QR_LABEL_THEME,
   skuLabelFileName,
 } from './sku-label-pdf.js';
 
@@ -92,5 +94,34 @@ describe('SKU QR label PDF', () => {
   it('uses deterministic PDF file names', () => {
     expect(skuLabelFileName([{ sku: { barcodes: ['000007'] }, count: 1 }])).toBe('sklad-000007.pdf');
     expect(skuLabelFileName([])).toBe('sklad-qr-labels.pdf');
+  });
+
+  it('renders QR modules as dots in app theme colors', () => {
+    const arc = vi.fn();
+    const fillRect = vi.fn();
+    const fill = vi.fn();
+    const ctx = {
+      fillStyle: '',
+      fillRect,
+      beginPath: vi.fn(),
+      arc,
+      fill,
+    };
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => ctx,
+      toDataURL: () => 'data:image/png;base64,styled-qr',
+    };
+    vi.stubGlobal('document', { createElement: () => canvas });
+
+    const dataUrl = createStyledQrDataURL('000042');
+    expect(dataUrl).toBe('data:image/png;base64,styled-qr');
+    expect(fillRect).toHaveBeenCalled();
+    expect(arc).toHaveBeenCalled();
+    expect(fill).toHaveBeenCalled();
+    expect(ctx.fillStyle).toBe(QR_LABEL_THEME.module);
+
+    vi.unstubAllGlobals();
   });
 });
