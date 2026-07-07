@@ -95,8 +95,6 @@ describe('session auth flow', () => {
   let originalWindow;
   let originalSessionStorage;
 
-  let navigatorStub;
-
   beforeEach(() => {
     storage = memoryStorage();
     configureAuthStorageForTests(storage);
@@ -104,7 +102,7 @@ describe('session auth flow', () => {
     originalFetch = globalThis.fetch;
     originalWindow = globalThis.window;
     originalSessionStorage = globalThis.sessionStorage;
-    navigatorStub = vi.stubGlobal('navigator', { onLine: true });
+    vi.stubGlobal('navigator', { onLine: true });
     globalThis.sessionStorage = memoryStorage();
     globalThis.window = {
       location: { origin: 'https://sklad.sion2k.ru', pathname: '/' },
@@ -115,7 +113,7 @@ describe('session auth flow', () => {
     globalThis.fetch = originalFetch;
     globalThis.window = originalWindow;
     globalThis.sessionStorage = originalSessionStorage;
-    navigatorStub.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   it('creates an app session on callback without storing provider tokens', async () => {
