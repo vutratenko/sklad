@@ -13,17 +13,17 @@
   <div id="app">
     <header class="header">
       <h1>Sklad</h1>
+      <button class="menu-toggle" id="menu-toggle" type="button" aria-controls="main-nav" aria-expanded="false" aria-label="Открыть меню">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
       <div class="status-bar">
         <span id="user-status" class="badge">...</span>
         <span id="network-status" class="badge">online</span>
         <span id="sync-status" class="badge">sync: 0</span>
       </div>
     </header>
-    <button class="menu-toggle" id="menu-toggle" type="button" aria-controls="main-nav" aria-expanded="false" aria-label="Открыть меню">
-      <span></span>
-      <span></span>
-      <span></span>
-    </button>
     <nav class="nav" id="main-nav" data-open="false">
       <button data-view="home" class="nav-btn active">Главная</button>
       <button data-view="stocks" class="nav-btn">Запасы</button>

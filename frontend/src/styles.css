@@ -533,8 +533,8 @@ tbody tr:hover {
 
 @media (max-width: 720px) {
   .header {
-    align-items: flex-start;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     min-height: 0;
     padding: var(--space-4);
   }
@@ -545,12 +545,14 @@ tbody tr:hover {
   }
 
   .status-bar {
+    grid-column: 1 / -1;
     justify-content: flex-start;
   }
 
   .menu-toggle {
     display: inline-flex;
-    margin: var(--space-3) var(--space-4) 0 auto;
+    align-self: center;
+    justify-self: end;
   }
 
   .nav {
