@@ -46,7 +46,11 @@ export function collectCategories(skus) {
     if (sku.is_active === false) continue;
     categories.add(categoryLabel(sku.category));
   }
-  return [...categories].sort((a, b) => a.localeCompare(b, 'ru'));
+  return [...categories].sort((a, b) => {
+    if (a === UNCATEGORIZED) return -1;
+    if (b === UNCATEGORIZED) return 1;
+    return a.localeCompare(b, 'ru', { sensitivity: 'base' });
+  });
 }
 
 export function filterSkusByCategory(skus, category) {
