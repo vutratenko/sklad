@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sklad-gitops
+  namespace: shturval-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/vutratenko/sklad.git
+    targetRevision: main
+    path: infra/argocd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shturval-cd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
