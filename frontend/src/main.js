@@ -1,5 +1,6 @@
 import { initRouter } from './app/router.js';
 import { movementFieldVisibility } from './app/movement-fields.js';
+import { isNavViewVisible } from './app/navigation.js';
 import {
   createLocation,
   createWarehouse,
@@ -28,6 +29,8 @@ const main = document.getElementById('main');
 const networkStatus = document.getElementById('network-status');
 const syncStatus = document.getElementById('sync-status');
 const userStatus = document.getElementById('user-status');
+const mainNav = document.getElementById('main-nav');
+const menuToggle = document.getElementById('menu-toggle');
 
 let authConfig = null;
 let currentUser = null;
@@ -106,6 +109,24 @@ function updateUserStatus() {
   } else {
     userStatus.textContent = 'guest';
   }
+}
+
+function isAuthenticated() {
+  return Boolean(currentUser || authConfig?.dev_bypass);
+}
+
+function setMobileMenuOpen(open) {
+  if (!mainNav || !menuToggle) return;
+  mainNav.dataset.open = open ? 'true' : 'false';
+  menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  menuToggle.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
+}
+
+function updateNavigationVisibility() {
+  const authenticated = isAuthenticated();
+  document.querySelectorAll('.nav .nav-btn[data-view]').forEach((btn) => {
+    btn.hidden = !isNavViewVisible(btn.dataset.view, authenticated);
+  });
 }
 
 function escapeHtml(s) {
@@ -723,6 +744,7 @@ function renderOAuthCallback() {
 }
 
 async function renderRoute(route) {
+  updateNavigationVisibility();
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.classList.toggle('active', routesMatch(btn.dataset.view, route.path));
   });
@@ -735,6 +757,7 @@ async function renderRoute(route) {
       await handleOAuthCallback(code);
       currentUser = await ensureAuth();
       updateUserStatus();
+      updateNavigationVisibility();
       window.history.replaceState({}, '', '/');
       return renderRoute({ path: '/' });
     } catch (err) {
@@ -807,6 +830,7 @@ function bindLoginHandlers() {
     devBtn.addEventListener('click', async () => {
       currentUser = await ensureAuth();
       updateUserStatus();
+      updateNavigationVisibility();
       window.history.pushState({}, '', '/');
       renderRoute({ path: '/' });
     });
@@ -821,6 +845,7 @@ function bindLoginHandlers() {
       await logout();
       currentUser = null;
       updateUserStatus();
+      updateNavigationVisibility();
       window.history.pushState({}, '', '/login');
       renderRoute({ path: '/login' });
     });
@@ -886,6 +911,20 @@ window.addEventListener('online', updateNetworkStatus);
 window.addEventListener('offline', updateNetworkStatus);
 updateNetworkStatus();
 
+if (menuToggle) {
+  menuToggle.addEventListener('click', () => {
+    setMobileMenuOpen(mainNav?.dataset.open !== 'true');
+  });
+}
+
+if (mainNav) {
+  mainNav.addEventListener('click', (event) => {
+    if (event.target.closest('.nav-btn[data-view]')) {
+      setMobileMenuOpen(false);
+    }
+  });
+}
+
 const syncEngine = new SyncEngine(({ pending, conflicts }) => {
   const label = conflicts > 0 ? `sync: ${pending}+${conflicts}!` : `sync: ${pending}`;
   syncStatus.textContent = label;
@@ -900,6 +939,7 @@ async function bootstrap() {
     currentUser = null;
   }
   updateUserStatus();
+  updateNavigationVisibility();
   router = initRouter(renderRoute);
   syncEngine.sync();
   setInterval(() => syncEngine.sync(), 30000);

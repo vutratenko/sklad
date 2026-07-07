@@ -19,7 +19,12 @@
         <span id="sync-status" class="badge">sync: 0</span>
       </div>
     </header>
-    <nav class="nav">
+    <button class="menu-toggle" id="menu-toggle" type="button" aria-controls="main-nav" aria-expanded="false" aria-label="Открыть меню">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+    <nav class="nav" id="main-nav" data-open="false">
       <button data-view="home" class="nav-btn active">Главная</button>
       <button data-view="stocks" class="nav-btn">Запасы</button>
       <button data-view="movements" class="nav-btn">Движения</button>

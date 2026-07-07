@@ -132,6 +132,10 @@ label.nav-btn:focus-within {
   outline-offset: 2px;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 #app {
   min-height: 100vh;
 }
@@ -238,6 +242,42 @@ label.nav-btn:focus-within {
   border-bottom: 1px solid var(--color-border);
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-strong) var(--color-surface-1);
+}
+
+.menu-toggle {
+  position: relative;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.55rem;
+  height: 2.55rem;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-surface-2);
+  box-shadow: var(--shadow-control);
+  cursor: pointer;
+}
+
+.menu-toggle span {
+  position: absolute;
+  display: block;
+  width: 1.15rem;
+  height: 2px;
+  background: var(--color-primary);
+}
+
+.menu-toggle span:nth-child(1) {
+  transform: translateY(-0.38rem);
+}
+
+.menu-toggle span:nth-child(3) {
+  transform: translateY(0.38rem);
+}
+
+.menu-toggle:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-3);
 }
 
 .nav-btn {
@@ -508,8 +548,26 @@ tbody tr:hover {
     justify-content: flex-start;
   }
 
+  .menu-toggle {
+    display: inline-flex;
+    margin: var(--space-3) var(--space-4) 0 auto;
+  }
+
   .nav {
+    display: none;
+    flex-direction: column;
+    gap: var(--space-2);
     padding: var(--space-3) var(--space-4);
+    overflow-x: visible;
+  }
+
+  .nav[data-open="true"] {
+    display: flex;
+  }
+
+  .nav-btn {
+    justify-content: flex-start;
+    width: 100%;
   }
 
   #main {
