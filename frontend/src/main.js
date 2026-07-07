@@ -1,4 +1,5 @@
 import { initRouter } from './app/router.js';
+import { movementFieldVisibility } from './app/movement-fields.js';
 import {
   createLocation,
   createWarehouse,
@@ -194,29 +195,18 @@ function renderMovementsPage(items, skus, filters = {}) {
 
 function updateMovementFields() {
   const type = document.getElementById('mv-type')?.value || 'receipt';
+  const adjustmentDirection = document.getElementById('mv-adj-dir')?.value || 'increase';
   const reasonRow = document.getElementById('mv-reason-row');
   const fromRow = document.getElementById('mv-from-row');
   const toRow = document.getElementById('mv-to-row');
   const adjRow = document.getElementById('mv-adj-row');
   if (!reasonRow) return;
 
-  reasonRow.hidden = type !== 'issue';
-  adjRow.hidden = type !== 'adjustment';
-
-  if (type === 'receipt') {
-    fromRow.hidden = true;
-    toRow.hidden = false;
-  } else if (type === 'issue') {
-    fromRow.hidden = false;
-    toRow.hidden = true;
-  } else if (type === 'transfer') {
-    fromRow.hidden = false;
-    toRow.hidden = false;
-  } else if (type === 'adjustment') {
-    const dir = document.getElementById('mv-adj-dir')?.value || 'increase';
-    fromRow.hidden = dir !== 'decrease';
-    toRow.hidden = dir !== 'increase';
-  }
+  const visibility = movementFieldVisibility(type, adjustmentDirection);
+  reasonRow.hidden = !visibility.reason;
+  adjRow.hidden = !visibility.adjustment;
+  fromRow.hidden = !visibility.from;
+  toRow.hidden = !visibility.to;
 }
 
 function bindStocksHandlers(initialFilters = {}) {
@@ -256,11 +246,19 @@ function bindStocksHandlers(initialFilters = {}) {
       quantity: qty,
       reason_code: type === 'issue' ? document.getElementById('mv-reason').value : '',
     };
-    if (type === 'receipt' || (type === 'adjustment' && document.getElementById('mv-adj-dir').value === 'increase') || type === 'transfer') {
+    const adjustmentDirection = document.getElementById('mv-adj-dir').value;
+    const adjustmentLocation = document.getElementById('mv-from').value || undefined;
+    if (type === 'receipt' || type === 'transfer') {
       data.to_location_id = document.getElementById('mv-to').value || undefined;
     }
-    if (type === 'issue' || (type === 'adjustment' && document.getElementById('mv-adj-dir').value === 'decrease') || type === 'transfer') {
+    if (type === 'issue' || type === 'transfer') {
       data.from_location_id = document.getElementById('mv-from').value || undefined;
+    }
+    if (type === 'adjustment' && adjustmentDirection === 'increase') {
+      data.to_location_id = adjustmentLocation;
+    }
+    if (type === 'adjustment' && adjustmentDirection === 'decrease') {
+      data.from_location_id = adjustmentLocation;
     }
     if ((type === 'receipt' || type === 'transfer') && !data.to_location_id) {
       resultEl.textContent = 'Укажите место назначения';
@@ -268,6 +266,10 @@ function bindStocksHandlers(initialFilters = {}) {
     }
     if ((type === 'issue' || type === 'transfer') && !data.from_location_id) {
       resultEl.textContent = 'Укажите место отгрузки';
+      return;
+    }
+    if (type === 'adjustment' && !adjustmentLocation) {
+      resultEl.textContent = 'Укажите место корректировки';
       return;
     }
     try {
