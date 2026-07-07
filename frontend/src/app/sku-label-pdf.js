@@ -11,8 +11,8 @@ const LABEL = {
 };
 
 export const QR_LABEL_THEME = {
-  module: '#ffffff',
-  background: '#000000',
+  module: '#000000',
+  background: '#ffffff',
   text: '#111317',
 };
 

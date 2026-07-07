@@ -97,7 +97,7 @@ describe('SKU QR label PDF', () => {
     expect(skuLabelFileName([])).toBe('sklad-qr-labels.pdf');
   });
 
-  it('renders readable inverted QR with solid finder modules', () => {
+  it('renders readable QR with solid finder modules on white background', () => {
     const arc = vi.fn();
     const fillRect = vi.fn();
     const fill = vi.fn();
@@ -117,8 +117,8 @@ describe('SKU QR label PDF', () => {
     vi.stubGlobal('document', { createElement: () => canvas });
 
     expect(QR_LABEL_THEME).toEqual({
-      module: '#ffffff',
-      background: '#000000',
+      module: '#000000',
+      background: '#ffffff',
       text: '#111317',
     });
     expect(isFinderRegion(0, 0, 21)).toBe(true);
@@ -128,7 +128,7 @@ describe('SKU QR label PDF', () => {
     expect(dataUrl).toBe('data:image/png;base64,styled-qr');
     expect(fillRect).toHaveBeenCalled();
     expect(arc).toHaveBeenCalled();
-    expect(ctx.fillStyle).toBe('#ffffff');
+    expect(ctx.fillStyle).toBe('#000000');
 
     vi.unstubAllGlobals();
   });
