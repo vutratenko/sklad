@@ -42,9 +42,10 @@ describe('sku page', () => {
     expect(html).not.toContain('data-action="qr-toggle"');
   });
 
-  it('filters QR search suggestions by name and id', () => {
+  it('filters QR search suggestions by name and QR code', () => {
     expect(filterSkusForQrSearch(sampleSkus, 'томат')).toHaveLength(1);
-    expect(filterSkusForQrSearch(sampleSkus, 'sku-2')[0].name).toBe('Сахар');
-    expect(filterSkusForQrSearch(sampleSkus, 'sku-1', new Set(['sku-1']))).toHaveLength(0);
+    expect(filterSkusForQrSearch(sampleSkus, '0002')[0].name).toBe('Сахар');
+    expect(filterSkusForQrSearch(sampleSkus, 'sku-2')).toHaveLength(0);
+    expect(filterSkusForQrSearch(sampleSkus, '4601', new Set(['sku-1']))).toHaveLength(0);
   });
 });

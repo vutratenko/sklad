@@ -15,6 +15,10 @@ const pageState = {
   qrSearchQuery: '',
 };
 
+export function skuQrCodes(sku) {
+  return (sku?.barcodes || []).map((code) => String(code).trim()).filter(Boolean);
+}
+
 export function filterSkusForQrSearch(skus, query, selectedIds = new Set()) {
   const needle = String(query || '').trim().toLowerCase();
   if (!needle) return [];
@@ -22,8 +26,8 @@ export function filterSkusForQrSearch(skus, query, selectedIds = new Set()) {
     .filter((sku) => !selectedIds.has(sku.id))
     .filter((sku) => {
       const name = (sku.name || '').toLowerCase();
-      const id = String(sku.id || '').toLowerCase();
-      return name.includes(needle) || id.includes(needle);
+      const codes = skuQrCodes(sku).map((code) => code.toLowerCase());
+      return name.includes(needle) || codes.some((code) => code.includes(needle));
     })
     .slice(0, 8);
 }
@@ -100,12 +104,15 @@ function renderQrSearchSuggestions(allSkus) {
 
   return `
     <div class="sku-qr-suggest-list" role="listbox">
-      ${matches.map((sku) => `
+      ${matches.map((sku) => {
+        const qrCode = skuQrCodes(sku)[0] || 'нет кода';
+        return `
         <button type="button" class="sku-qr-suggest-item" data-action="qr-pick" data-id="${sku.id}">
           <span class="sku-qr-suggest-name">${escapeHtml(sku.name)}</span>
-          <span class="meta">${escapeHtml(sku.id)}</span>
+          <span class="meta">${escapeHtml(qrCode)}</span>
         </button>
-      `).join('')}
+      `;
+      }).join('')}
     </div>
   `;
 }
@@ -116,10 +123,10 @@ function renderQrPrintPanel(allSkus) {
     title: 'Печать QR кодов',
     expanded: pageState.qrPrintExpanded,
     bodyHtml: `
-      <p class="sku-panel-hint">Найдите SKU по названию или ID, добавьте в список и укажите количество QR. Размер QR — 2 см, под кодом название.</p>
+      <p class="sku-panel-hint">Найдите SKU по названию или QR-коду, добавьте в список и укажите количество QR. Размер QR — 2 см, под кодом название.</p>
       <div class="form-row sku-qr-search-wrap">
         <label for="sku-qr-search">Поиск SKU</label>
-        <input id="sku-qr-search" type="search" autocomplete="off" placeholder="название или ID" value="${escapeHtml(pageState.qrSearchQuery)}" />
+        <input id="sku-qr-search" type="search" autocomplete="off" placeholder="название или QR-код" value="${escapeHtml(pageState.qrSearchQuery)}" />
         ${renderQrSearchSuggestions(allSkus)}
       </div>
       <div class="sku-qr-list">${renderQrSelectedRows(allSkus)}</div>
