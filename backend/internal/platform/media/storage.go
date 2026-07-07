@@ -24,10 +24,22 @@ func NewStorage(dir string) (*Storage, error) {
 	if dir == "" {
 		dir = "./data/media"
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o775); err != nil {
 		return nil, fmt.Errorf("create media dir: %w", err)
 	}
+	if err := assertDirWritable(dir); err != nil {
+		return nil, err
+	}
 	return &Storage{dir: dir}, nil
+}
+
+func assertDirWritable(dir string) error {
+	probe := filepath.Join(dir, ".writable")
+	if err := os.WriteFile(probe, []byte("1"), 0o644); err != nil {
+		return fmt.Errorf("media dir not writable: %w", err)
+	}
+	_ = os.Remove(probe)
+	return nil
 }
 
 func (s *Storage) SaveSKUPhoto(skuID string, contentType string, r io.Reader) (string, error) {
@@ -38,7 +50,7 @@ func (s *Storage) SaveSKUPhoto(skuID string, contentType string, r io.Reader) (s
 
 	filename := skuID + ext
 	path := filepath.Join(s.dir, filename)
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return "", fmt.Errorf("create photo file: %w", err)
 	}

@@ -1,4 +1,5 @@
 import { apiFetch, apiUpload, db } from '../../infra/sync-engine.js';
+import { compressPhotoForUpload } from '../photo-compress.js';
 
 export async function loadSKUs(q = '', activeOnly = false) {
   const items = await db.getCachedSKUs();
@@ -50,8 +51,9 @@ export async function removeBarcode(skuId, barcode) {
 }
 
 export async function uploadPhoto(skuId, file) {
+  const prepared = await compressPhotoForUpload(file);
   const form = new FormData();
-  form.append('photo', file);
+  form.append('photo', prepared, prepared.name);
   const sku = await apiUpload(`/skus/${skuId}/photo`, form);
   await db.putSKU(sku);
   return sku;

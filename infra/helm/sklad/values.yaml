@@ -25,6 +25,14 @@ api:
     OIDC_USERINFO_HOST: ""
     SESSION_TTL_DAYS: "365"
   resources: {}
+  podSecurityContext:
+    fsGroup: 65532
+    fsGroupChangePolicy: OnRootMismatch
+  securityContext:
+    runAsUser: 65532
+    runAsGroup: 65532
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
   persistence:
     enabled: true
     size: 5Gi

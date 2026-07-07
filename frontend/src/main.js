@@ -305,7 +305,7 @@ function renderSKUs(items) {
         <button class="nav-btn" data-action="print-sku-qr" data-id="${s.id}">PDF QR</button>
         <label class="nav-btn" style="cursor:pointer">
           Фото
-          <input type="file" accept="image/jpeg,image/png,image/webp" hidden data-action="upload-photo" data-id="${s.id}" />
+          <input type="file" accept="image/*" hidden data-action="upload-photo" data-id="${s.id}" />
         </label>
       </div>
     </div>
