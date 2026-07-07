@@ -4,19 +4,11 @@ import { buildA4QRLabelLayout, generateSKUQRCodePDF, primaryBarcode, skuLabelFil
 function fakeDoc() {
   return {
     images: [],
-    texts: [],
     savedAs: '',
-    setFont: vi.fn(),
-    setFontSize: vi.fn(),
     addImage(image, type, x, y, width, height) {
       this.images.push({ image, type, x, y, width, height });
     },
-    splitTextToSize(text) {
-      return [text];
-    },
-    text(text, x, y, options) {
-      this.texts.push({ text, x, y, options });
-    },
+    text: vi.fn(),
     save(fileName) {
       this.savedAs = fileName;
     },
@@ -37,18 +29,21 @@ describe('SKU QR label PDF', () => {
 
   it('generates one A4 PDF page filled with repeated SKU QR labels', async () => {
     const doc = fakeDoc();
+    const textImageFactory = vi.fn((text) => `data:image/png;base64,text-${text}`);
     const result = await generateSKUQRCodePDF(
       { name: 'Томатная паста', barcodes: ['000042'] },
       {
         doc,
         qrFactory: vi.fn(async (code) => `data:image/png;base64,${code}`),
+        textImageFactory,
       },
     );
 
     expect(result.code).toBe('000042');
-    expect(doc.images).toHaveLength(result.labels);
-    expect(doc.texts).toHaveLength(result.labels);
-    expect(doc.texts[0].text).toEqual(['Томатная паста']);
+    expect(doc.images).toHaveLength(result.labels * 2);
+    expect(doc.images[1].image).toBe('data:image/png;base64,text-Томатная паста');
+    expect(textImageFactory).toHaveBeenCalledWith('Томатная паста', { width: 256, height: 72 });
+    expect(doc.text).not.toHaveBeenCalled();
     expect(doc.savedAs).toBe('sklad-000042.pdf');
   });
 

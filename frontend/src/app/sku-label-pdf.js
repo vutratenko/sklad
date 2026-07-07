@@ -31,12 +31,49 @@ export function buildA4QRLabelLayout(page = A4, label = LABEL) {
         x: label.margin + col * cellWidth,
         y: label.margin + row * cellHeight,
         qrSize: label.qrSize,
-        textY: label.margin + row * cellHeight + label.qrSize + 4,
+        textY: label.margin + row * cellHeight + label.qrSize + 2,
         textWidth: label.qrSize,
+        textHeight: label.textHeight,
       });
     }
   }
   return labels;
+}
+
+export function createTextImageDataURL(text, options = {}) {
+  const width = options.width || 256;
+  const height = options.height || 72;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#111317';
+  ctx.font = `${options.fontWeight || 600} ${options.fontSize || 20}px ${options.fontFamily || 'Inter, Arial, sans-serif'}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (ctx.measureText(candidate).width <= width - 8 || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  const visible = lines.slice(0, 2);
+  const lineHeight = options.lineHeight || 24;
+  const startY = height / 2 - ((visible.length - 1) * lineHeight) / 2;
+  visible.forEach((line, index) => {
+    ctx.fillText(line, width / 2, startY + index * lineHeight, width - 8);
+  });
+
+  return canvas.toDataURL('image/png');
 }
 
 export async function generateSKUQRCodePDF(sku, options = {}) {
@@ -53,16 +90,15 @@ export async function generateSKUQRCodePDF(sku, options = {}) {
   });
   const labels = buildA4QRLabelLayout(options.page, options.label);
   const name = String(sku.name || code);
+  const textImageFactory = options.textImageFactory || createTextImageDataURL;
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
   labels.forEach((label) => {
     doc.addImage(qrDataURL, 'PNG', label.x, label.y, label.qrSize, label.qrSize);
-    const lines = doc.splitTextToSize(name, label.textWidth);
-    doc.text(lines.slice(0, 2), label.x + label.qrSize / 2, label.textY, {
-      align: 'center',
-      maxWidth: label.textWidth,
+    const textDataURL = textImageFactory(name, {
+      width: 256,
+      height: 72,
     });
+    doc.addImage(textDataURL, 'PNG', label.x, label.textY, label.textWidth, label.textHeight);
   });
 
   doc.save(skuLabelFileName(sku));
