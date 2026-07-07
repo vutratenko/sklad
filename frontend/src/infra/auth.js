@@ -1,5 +1,7 @@
 const TOKEN_KEY = 'sklad_access_token';
 const AUTH_CONFIG_KEY = 'sklad_auth_config';
+const AUTH_CONFIG_LOCAL_KEY = 'sklad_auth_config_local';
+const CACHED_USER_KEY = 'sklad_cached_user';
 const REDIRECT_URI_KEY = 'sklad_oauth_redirect_uri';
 const LOCAL_TOKEN_ENDPOINT = '/api/v1/auth/oidc/token';
 const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
@@ -17,13 +19,40 @@ export async function loadAuthConfig() {
   if (cached) {
     return JSON.parse(cached);
   }
+  const localCached = tokenStorage?.getItem(AUTH_CONFIG_LOCAL_KEY);
+  if (localCached) {
+    sessionStorage.setItem(AUTH_CONFIG_KEY, localCached);
+    return JSON.parse(localCached);
+  }
   const res = await fetch('/api/v1/auth/oidc/config');
   if (!res.ok) {
     throw new Error('failed to load auth config');
   }
   const config = await res.json();
-  sessionStorage.setItem(AUTH_CONFIG_KEY, JSON.stringify(config));
+  const serialized = JSON.stringify(config);
+  sessionStorage.setItem(AUTH_CONFIG_KEY, serialized);
+  tokenStorage?.setItem(AUTH_CONFIG_LOCAL_KEY, serialized);
   return config;
+}
+
+export function cacheUser(user) {
+  if (!user?.id) return;
+  tokenStorage?.setItem(CACHED_USER_KEY, JSON.stringify(user));
+}
+
+export function getCachedUser() {
+  const raw = tokenStorage?.getItem(CACHED_USER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    tokenStorage?.removeItem(CACHED_USER_KEY);
+    return null;
+  }
+}
+
+export function clearCachedUser() {
+  tokenStorage?.removeItem(CACHED_USER_KEY);
 }
 
 export function getAccessToken() {
@@ -89,6 +118,7 @@ export function callbackRedirectUri(config, location = window.location) {
 
 export function logout() {
   setAccessToken(null);
+  clearCachedUser();
   sessionStorage.removeItem(AUTH_CONFIG_KEY);
   sessionStorage.removeItem(REDIRECT_URI_KEY);
   return fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => null);
@@ -174,19 +204,33 @@ export async function fetchCurrentUser() {
   if (!res.ok) {
     throw new Error('not authenticated');
   }
-  return res.json();
+  const user = await res.json();
+  cacheUser(user);
+  return user;
 }
 
 export async function ensureAuth() {
-  const config = await loadAuthConfig();
-  if (config.dev_bypass) {
-    return fetchCurrentUser();
-  }
+  let config;
   try {
-    return await fetchCurrentUser();
+    config = await loadAuthConfig();
   } catch {
-    return null;
+    return getCachedUser();
   }
+  if (config.dev_bypass) {
+    try {
+      return await fetchCurrentUser();
+    } catch {
+      return getCachedUser();
+    }
+  }
+  if (navigator.onLine) {
+    try {
+      return await fetchCurrentUser();
+    } catch {
+      return getCachedUser();
+    }
+  }
+  return getCachedUser();
 }
 
 export function authHeaders() {

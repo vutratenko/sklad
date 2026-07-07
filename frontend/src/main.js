@@ -88,7 +88,7 @@ async function refreshMovementsPage(filters = {}) {
 }
 
 function refreshDataInBackground(renderCurrent) {
-  if (!navigator.onLine || !currentUser) return;
+  if (!currentUser) return;
   const routePath = window.location.pathname || '/';
   void syncEngine.refreshLocalData().then(async () => {
     if ((window.location.pathname || '/') !== routePath) return;
@@ -876,8 +876,21 @@ function bindScanHandlers({ autostart = false } = {}) {
   }
 }
 
-window.addEventListener('online', updateNetworkStatus);
-window.addEventListener('offline', updateNetworkStatus);
+window.addEventListener('online', async () => {
+  updateNetworkStatus();
+  try {
+    currentUser = await ensureAuth() || currentUser;
+  } catch {
+    // keep cached session
+  }
+  updateUserStatus();
+  updateNavigationVisibility();
+  syncEngine.sync();
+});
+
+window.addEventListener('offline', () => {
+  updateNetworkStatus();
+});
 updateNetworkStatus();
 
 if (menuToggle) {
@@ -901,12 +914,12 @@ const syncEngine = new SyncEngine(({ pending, conflicts }) => {
 });
 
 async function bootstrap() {
-  authConfig = await loadAuthConfig();
   try {
-    currentUser = await ensureAuth();
+    authConfig = await loadAuthConfig();
   } catch {
-    currentUser = null;
+    authConfig = null;
   }
+  currentUser = await ensureAuth();
   updateUserStatus();
   updateNavigationVisibility();
   router = initRouter(renderRoute);

@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  cacheUser,
   ensureAuth,
   configureAuthStorageForTests,
   callbackRedirectUri,
   getAccessToken,
+  getCachedUser,
   handleOAuthCallback,
   hasOAuthCallback,
+  loadAuthConfig,
   selectAuthToken,
   setAccessToken,
   tokenEndpoint,
@@ -154,5 +157,39 @@ describe('session auth flow', () => {
 
     expect(user.id).toBe('user-42');
     expect(fetchCalls.map((call) => call.url)).toEqual(['/api/v1/auth/me']);
+    expect(getCachedUser()?.id).toBe('user-42');
+  });
+
+  it('restores cached user when offline', async () => {
+    sessionStorage.setItem('sklad_auth_config', JSON.stringify({
+      dev_bypass: false,
+      token_endpoint: '/api/v1/auth/oidc/token',
+    }));
+    cacheUser({ id: 'user-offline', name: 'Offline User' });
+    globalThis.navigator = { onLine: false };
+    globalThis.fetch = async () => {
+      throw new Error('network unavailable');
+    };
+
+    const user = await ensureAuth();
+
+    expect(user).toEqual({ id: 'user-offline', name: 'Offline User' });
+    globalThis.navigator = { onLine: true };
+  });
+
+  it('loads auth config from local storage when offline', async () => {
+    storage.setItem('sklad_auth_config_local', JSON.stringify({
+      client_id: 'sklad-client',
+      dev_bypass: false,
+    }));
+    globalThis.navigator = { onLine: false };
+    globalThis.fetch = async () => {
+      throw new Error('network unavailable');
+    };
+
+    const config = await loadAuthConfig();
+
+    expect(config.client_id).toBe('sklad-client');
+    globalThis.navigator = { onLine: true };
   });
 });
