@@ -664,7 +664,8 @@ function renderHome(warehouseChips = []) {
   }
   const chips = warehouseChips.map((warehouse) => `
     <a class="chip-link" href="/stocks" data-action="home-stock-wh" data-warehouse-id="${escapeHtml(warehouse.id)}">
-      ${escapeHtml(warehouse.name)}
+      <span class="chip-label">${escapeHtml(warehouse.name)}</span>
+      <span class="chip-count">${warehouse.skuCount} SKU</span>
     </a>
   `).join('');
   return `
