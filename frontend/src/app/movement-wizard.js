@@ -115,8 +115,9 @@ function operationLabel(type) {
 }
 
 function renderSkuPhoto(sku) {
-  if (sku.photo_url) {
-    return `<img class="pick-photo" src="${escapeHtml(sku.photo_url)}" alt="" />`;
+  const src = sku.photo_src || sku.photo_url;
+  if (src) {
+    return `<img class="pick-photo" src="${escapeHtml(src)}" alt="" />`;
   }
   return '<div class="pick-photo pick-photo-empty">—</div>';
 }
@@ -243,7 +244,7 @@ function renderDetailsStep(skus, locations, stocks) {
       </div>
       <div class="wizard-details-card">
         <div class="sku-row">
-          ${sku.photo_url ? `<img class="sku-photo" src="${escapeHtml(sku.photo_url)}" alt="" />` : '<div class="sku-photo sku-photo-empty">—</div>'}
+          ${(sku.photo_src || sku.photo_url) ? `<img class="sku-photo" src="${escapeHtml(sku.photo_src || sku.photo_url)}" alt="" />` : '<div class="sku-photo sku-photo-empty">—</div>'}
           <div class="sku-info">
             <h4>${escapeHtml(sku.name)}</h4>
             <div class="meta">${escapeHtml(categoryLabel(sku.category))} · ${escapeHtml(sku.unit || 'шт')}</div>

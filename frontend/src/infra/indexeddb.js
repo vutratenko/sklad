@@ -1,6 +1,6 @@
 const DB_NAME = 'sklad-wms';
-const DB_VERSION = 3;
-const SCHEMA_VERSION = 3;
+const DB_VERSION = 4;
+const SCHEMA_VERSION = 4;
 
 const STORES = {
   skus: { keyPath: 'id' },
@@ -10,6 +10,7 @@ const STORES = {
   locations: { keyPath: 'id' },
   op_queue: { keyPath: 'opId' },
   sync_meta: { keyPath: 'key' },
+  sku_photos: { keyPath: 'skuId' },
 };
 
 let dbPromise = null;
@@ -213,8 +214,41 @@ export async function cacheStocks(items) {
 
 export async function cacheSKUs(items) {
   for (const item of items) {
-    await put('skus', item);
+    const pending = await hasPendingLocalPhoto(item.id);
+    const merged = pending
+      ? { ...item, photo_url: `local:${item.id}`, photo_pending: true }
+      : item;
+    await put('skus', merged);
   }
+}
+
+async function hasPendingLocalPhoto(skuId) {
+  const record = await getLocalPhoto(skuId);
+  return !!record?.pendingUpload;
+}
+
+export async function putLocalPhoto(record) {
+  await put('sku_photos', record);
+}
+
+export async function getLocalPhoto(skuId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('sku_photos', 'readonly');
+    const req = t.objectStore('sku_photos').get(skuId);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function removeLocalPhoto(skuId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('sku_photos', 'readwrite');
+    t.objectStore('sku_photos').delete(skuId);
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+  });
 }
 
 export async function putSKU(item) {

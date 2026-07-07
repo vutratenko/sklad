@@ -1,5 +1,18 @@
-import { apiFetch, apiUpload, db } from '../../infra/sync-engine.js';
+import { apiFetch, apiUpload, db, queuePhotoUpload } from '../../infra/sync-engine.js';
 import { compressPhotoForUpload } from '../photo-compress.js';
+import {
+  cacheServerPhoto,
+  enrichSkuPhoto,
+  enrichSkusPhotos,
+  localPhotoUrl,
+  saveLocalPhoto,
+} from '../photo-store.js';
+
+function isNetworkError(err) {
+  if (!err) return false;
+  if (err instanceof TypeError) return true;
+  return /network|fetch|failed to fetch/i.test(String(err.message || ''));
+}
 
 export async function loadSKUs(q = '', activeOnly = false) {
   const items = await db.getCachedSKUs();
@@ -13,19 +26,19 @@ export async function loadSKUs(q = '', activeOnly = false) {
         (s.barcodes || []).some((b) => b.includes(needle))
     );
   }
-  return filtered;
+  return enrichSkusPhotos(filtered);
 }
 
 export async function createSKU(data) {
   const sku = await apiFetch('/skus', { method: 'POST', body: JSON.stringify(data) });
   await db.putSKU(sku);
-  return sku;
+  return enrichSkuPhoto(sku);
 }
 
 export async function updateSKU(id, data) {
   const sku = await apiFetch(`/skus/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
   await db.putSKU(sku);
-  return sku;
+  return enrichSkuPhoto(sku);
 }
 
 export async function deleteSKU(id) {
@@ -39,7 +52,7 @@ export async function addBarcode(skuId, barcode) {
     body: JSON.stringify({ barcode }),
   });
   await db.putSKU(sku);
-  return sku;
+  return enrichSkuPhoto(sku);
 }
 
 export async function removeBarcode(skuId, barcode) {
@@ -47,16 +60,49 @@ export async function removeBarcode(skuId, barcode) {
     method: 'DELETE',
   });
   await db.putSKU(sku);
-  return sku;
+  return enrichSkuPhoto(sku);
+}
+
+async function uploadPhotoOnline(skuId, file) {
+  const form = new FormData();
+  form.append('photo', file, file.name);
+  const sku = await apiUpload(`/skus/${skuId}/photo`, form);
+  await cacheServerPhoto(skuId, sku.photo_url);
+  await db.putSKU(sku);
+  return enrichSkuPhoto(sku);
+}
+
+async function queuePhotoOffline(skuId, file) {
+  await saveLocalPhoto(skuId, file, {
+    pendingUpload: true,
+    filename: file.name,
+    mimeType: file.type,
+  });
+  await queuePhotoUpload(skuId);
+
+  const items = await db.getCachedSKUs();
+  const existing = items.find((item) => item.id === skuId) || { id: skuId, name: 'SKU' };
+  const updated = {
+    ...existing,
+    photo_url: localPhotoUrl(skuId),
+    photo_pending: true,
+  };
+  await db.putSKU(updated);
+  return enrichSkuPhoto(updated);
 }
 
 export async function uploadPhoto(skuId, file) {
   const prepared = await compressPhotoForUpload(file);
-  const form = new FormData();
-  form.append('photo', prepared, prepared.name);
-  const sku = await apiUpload(`/skus/${skuId}/photo`, form);
-  await db.putSKU(sku);
-  return sku;
+
+  if (navigator.onLine) {
+    try {
+      return await uploadPhotoOnline(skuId, prepared);
+    } catch (err) {
+      if (!isNetworkError(err)) throw err;
+    }
+  }
+
+  return queuePhotoOffline(skuId, prepared);
 }
 
 export async function lookupBarcode(barcode) {
@@ -69,7 +115,7 @@ export async function lookupBarcode(barcode) {
     const sku = await db.findSKUByBarcode(code);
     if (!sku) return null;
     const stocks = await db.getStocksBySKUID(sku.id);
-    return { barcode: code, sku, stocks, source: 'cache' };
+    return { barcode: code, sku: await enrichSkuPhoto(sku), stocks, source: 'cache' };
   }
 
   if (navigator.onLine) {
@@ -77,7 +123,12 @@ export async function lookupBarcode(barcode) {
       const resp = await apiFetch(`/barcodes/${encodeURIComponent(code)}`);
       if (resp.sku) await db.putSKU(resp.sku);
       if (resp.stocks?.length) await db.cacheStocks(resp.stocks);
-      return { ...resp, source: 'server' };
+      if (resp.sku?.photo_url) await cacheServerPhoto(resp.sku.id, resp.sku.photo_url);
+      return {
+        ...resp,
+        sku: resp.sku ? await enrichSkuPhoto(resp.sku) : resp.sku,
+        source: 'server',
+      };
     } catch (err) {
       const local = await lookupLocal();
       if (local) return local;
@@ -105,7 +156,7 @@ export async function lookupSKU(skuId) {
     const stocks = await db.getStocksBySKUID(sku.id);
     return {
       barcode: (sku.barcodes || [])[0] || id,
-      sku,
+      sku: await enrichSkuPhoto(sku),
       stocks,
       source: 'cache',
     };
@@ -115,12 +166,13 @@ export async function lookupSKU(skuId) {
     try {
       const sku = await apiFetch(`/skus/${id}`);
       await db.putSKU(sku);
+      if (sku.photo_url) await cacheServerPhoto(sku.id, sku.photo_url);
       const stocksResp = await apiFetch(`/stocks?sku_id=${encodeURIComponent(id)}`);
       const stocks = stocksResp.items || [];
       if (stocks.length) await db.cacheStocks(stocks);
       return {
         barcode: (sku.barcodes || [])[0] || id,
-        sku,
+        sku: await enrichSkuPhoto(sku),
         stocks,
         source: 'server',
       };

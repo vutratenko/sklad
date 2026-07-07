@@ -46,6 +46,7 @@ export class SyncEngine {
     if (this.running || !navigator.onLine) return;
     this.running = true;
     try {
+      await this.pushPhotos();
       await this.push();
       await this.pull();
     } finally {
@@ -54,8 +55,54 @@ export class SyncEngine {
     }
   }
 
+  async pushPhotos() {
+    const ops = (await db.getSyncOps()).filter(
+      (op) => op.entityType === 'sku_photo' && isOpReadyForPush(op),
+    );
+    if (ops.length === 0) return;
+
+    const { cacheServerPhoto, getLocalPhotoRecord, markLocalPhotoSynced } = await import('../app/photo-store.js');
+
+    for (const op of ops) {
+      const skuId = op.payload?.sku_id;
+      if (!skuId) {
+        await db.removeOp(op.opId);
+        continue;
+      }
+
+      const record = await getLocalPhotoRecord(skuId);
+      if (!record?.blob || !record.pendingUpload) {
+        await db.removeOp(op.opId);
+        continue;
+      }
+
+      try {
+        const file = new File([record.blob], record.filename || `${skuId}.jpg`, {
+          type: record.mimeType || 'image/jpeg',
+        });
+        const form = new FormData();
+        form.append('photo', file, file.name);
+        const sku = await apiUpload(`/skus/${skuId}/photo`, form);
+        await cacheServerPhoto(skuId, sku.photo_url);
+        await db.putSKU(sku);
+        await markLocalPhotoSynced(skuId);
+        await db.removeOp(op.opId);
+      } catch (err) {
+        op.retryCount = (op.retryCount || 0) + 1;
+        if (op.retryCount >= 10) {
+          op.status = 'failed';
+          op.lastError = err.message;
+        } else {
+          op.status = 'retry_wait';
+          op.nextRetryAt = new Date(Date.now() + backoffMs(op.retryCount)).toISOString();
+        }
+        await db.updateOp(op);
+      }
+    }
+  }
+
   async push() {
-    const pending = await db.getPendingOps();
+    const pending = (await db.getPendingOps()).filter((op) => op.entityType !== 'sku_photo');
     if (pending.length === 0) return;
 
     const operations = pending.map((op) => ({
@@ -143,6 +190,8 @@ export class SyncEngine {
       await db.cacheStocks(stocks.items || []);
       const skus = await apiFetch('/skus');
       await db.cacheSKUs(skus.items || []);
+      const { prefetchSkuPhotos } = await import('../app/photo-store.js');
+      await prefetchSkuPhotos(skus.items || []);
       const movements = await apiFetch('/movements?limit=200');
       await db.cacheMovements(movements.items || []);
       const warehouses = await apiFetch('/warehouses?active_only=true');
@@ -177,6 +226,26 @@ export async function queueMovement(payload) {
   return opId;
 }
 
+export async function queuePhotoUpload(skuId) {
+  const existing = (await db.getSyncOps()).find(
+    (op) => op.entityType === 'sku_photo' && op.payload?.sku_id === skuId && op.status !== 'failed',
+  );
+  if (existing) {
+    await db.resetOpForRetry(existing);
+    return existing.opId;
+  }
+
+  const opId = uuid();
+  await db.enqueueOp({
+    opId,
+    idempotencyKey: opId,
+    entityType: 'sku_photo',
+    action: 'upload',
+    payload: { sku_id: skuId },
+  });
+  return opId;
+}
+
 export async function retrySyncOp(opId) {
   const ops = await db.getSyncOps();
   const op = ops.find((o) => o.opId === opId);
@@ -185,6 +254,17 @@ export async function retrySyncOp(opId) {
 }
 
 export async function discardSyncOp(opId, engine) {
+  const ops = await db.getSyncOps();
+  const op = ops.find((o) => o.opId === opId);
+  if (op?.entityType === 'sku_photo' && op.payload?.sku_id) {
+    const { removeLocalPhoto } = await import('../app/photo-store.js');
+    await removeLocalPhoto(op.payload.sku_id);
+    const items = await db.getCachedSKUs();
+    const sku = items.find((item) => item.id === op.payload.sku_id);
+    if (sku) {
+      await db.putSKU({ ...sku, photo_url: '', photo_pending: false });
+    }
+  }
   await db.removeOp(opId);
   if (engine && navigator.onLine) {
     await engine.refreshLocalData();

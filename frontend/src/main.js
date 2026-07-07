@@ -137,6 +137,10 @@ function escapeHtml(s) {
   );
 }
 
+function skuPhotoSrc(item, fallback = '') {
+  return item?.photo_src || item?.photo_url || fallback;
+}
+
 function formatDate(iso) {
   if (!iso) return '';
   try {
@@ -161,10 +165,13 @@ async function loadAllLocations() {
 }
 
 function renderStocksPage(stocks, skus, locations, warehouses, filters = {}) {
-  const stockList = stocks.map((s) => `
+  const skuById = Object.fromEntries(skus.map((sku) => [sku.id, sku]));
+  const stockList = stocks.map((s) => {
+    const photoSrc = skuPhotoSrc(skuById[s.sku_id], s.photo_url);
+    return `
     <div class="card">
       <div class="sku-row">
-        ${s.photo_url ? `<img class="sku-photo" src="${escapeHtml(s.photo_url)}" alt="" />` : '<div class="sku-photo sku-photo-empty">—</div>'}
+        ${photoSrc ? `<img class="sku-photo" src="${escapeHtml(photoSrc)}" alt="" />` : '<div class="sku-photo sku-photo-empty">—</div>'}
         <div class="sku-info">
           <h3>${escapeHtml(s.sku_name || 'SKU')}</h3>
           <div class="meta">
@@ -174,7 +181,8 @@ function renderStocksPage(stocks, skus, locations, warehouses, filters = {}) {
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   const whOptions = warehouses
     .map((w) => `<option value="${w.id}"${filters.warehouse_id === w.id ? ' selected' : ''}>${escapeHtml(w.name)}</option>`)
@@ -291,7 +299,7 @@ function renderSKUs(items) {
   const list = items.map((s) => `
     <div class="card sku-card" data-sku-id="${s.id}">
       <div class="sku-row">
-        ${s.photo_url ? `<img class="sku-photo" src="${escapeHtml(s.photo_url)}" alt="" />` : '<div class="sku-photo sku-photo-empty">нет фото</div>'}
+        ${skuPhotoSrc(s) ? `<img class="sku-photo" src="${escapeHtml(skuPhotoSrc(s))}" alt="" />` : '<div class="sku-photo sku-photo-empty">нет фото</div>'}
         <div class="sku-info">
           <h3>${escapeHtml(s.name)}</h3>
           <div class="meta">${escapeHtml(s.category || '')} · ${escapeHtml(s.unit)} · ${s.is_active === false ? 'неактивен' : 'активен'}</div>
@@ -371,6 +379,7 @@ function bindSKUHandlers() {
       if (!file) return;
       try {
         await uploadPhoto(input.dataset.id, file);
+        syncEngine.sync();
         main.innerHTML = renderSKUs(await loadSKUs());
         bindSKUHandlers();
       } catch (err) {
@@ -404,7 +413,7 @@ function renderScanResult(resp) {
     <div class="card">
       ${source === 'cache' ? '<span class="badge">из кэша</span> ' : ''}
       <div class="sku-row">
-        ${sku.photo_url ? `<img class="sku-photo" src="${escapeHtml(sku.photo_url)}" alt="" />` : '<div class="sku-photo sku-photo-empty">—</div>'}
+        ${skuPhotoSrc(sku) ? `<img class="sku-photo" src="${escapeHtml(skuPhotoSrc(sku))}" alt="" />` : '<div class="sku-photo sku-photo-empty">—</div>'}
         <div class="sku-info">
           <h3>${escapeHtml(sku.name)}</h3>
           <div class="meta">${escapeHtml(sku.category || '')} · ${escapeHtml(sku.unit || 'шт')}</div>
@@ -460,7 +469,9 @@ function renderSyncPanel({ ops, cursor }) {
     const line = payload.lines?.[0];
     const summary = payload.operation_type
       ? `${OP_LABELS[payload.operation_type] || payload.operation_type}${line ? `, ${line.quantity} шт` : ''}`
-      : '';
+      : op.entityType === 'sku_photo'
+        ? `фото SKU ${payload.sku_id || ''}`
+        : '';
     const statusLabel = {
       pending: 'ожидает',
       retry_wait: 'повтор',

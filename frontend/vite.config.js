@@ -30,6 +30,19 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,ico}'],
+        runtimeCaching: [
+          {
+            urlPattern: /\/api\/v1\/media\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'sku-media',
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+            },
+          },
+        ],
       },
     }),
   ],

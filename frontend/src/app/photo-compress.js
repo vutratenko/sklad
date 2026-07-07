@@ -1,6 +1,6 @@
-const DEFAULT_MAX_DIMENSION = 1600;
+const DEFAULT_MAX_DIMENSION = 720;
 const DEFAULT_QUALITY = 0.85;
-const SKIP_BELOW_BYTES = 180_000;
+const SKIP_BELOW_BYTES = 120_000;
 
 export function scaleDimensions(width, height, maxDimension = DEFAULT_MAX_DIMENSION) {
   const safeMax = Math.max(1, maxDimension);
