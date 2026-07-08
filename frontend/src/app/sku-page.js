@@ -6,6 +6,7 @@ import {
   uploadPhoto,
 } from './views/catalog.js';
 import { generateBatchSKUQRCodePDF } from './sku-label-pdf.js';
+import { isLocalPhotoUrl } from './photo-store.js';
 
 const pageState = {
   newSkuExpanded: false,
@@ -39,7 +40,9 @@ function escapeHtml(s) {
 }
 
 function skuPhotoSrc(item) {
-  return item?.photo_src || item?.photo_url || '';
+  if (item?.photo_src) return item.photo_src;
+  if (item?.photo_url && !isLocalPhotoUrl(item.photo_url)) return item.photo_url;
+  return '';
 }
 
 function renderCollapsiblePanel({ id, title, expanded, bodyHtml }) {

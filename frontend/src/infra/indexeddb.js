@@ -216,7 +216,7 @@ export async function cacheSKUs(items) {
   for (const item of items) {
     const pending = await hasPendingLocalPhoto(item.id);
     const merged = pending
-      ? { ...item, photo_url: `local:${item.id}`, photo_pending: true }
+      ? { ...item, photo_pending: true }
       : item;
     await put('skus', merged);
   }
