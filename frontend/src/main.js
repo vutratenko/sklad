@@ -18,7 +18,7 @@ import { loadSKUs, lookupScanCode } from './app/views/catalog.js';
 import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue } from './app/views.js';
 import { isCameraScanSupported, parseQrScanValue, startCameraScan } from './app/views/scan.js';
 import { OPERATION_TYPES, submitMovement } from './app/views/movements.js';
-import { SyncEngine, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
+import { SyncEngine, db, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
 import { ensureAuth, handleOAuthCallback, hasOAuthCallback, loadAuthConfig, logout, startLogin } from './infra/auth.js';
 
 const main = document.getElementById('main');
@@ -295,7 +295,7 @@ async function refreshSkuPage(searchQuery) {
   const q = typeof searchQuery === 'string'
     ? searchQuery
     : (document.getElementById('sku-search')?.value.trim() ?? '');
-  const [items, allSkus] = await Promise.all([loadSKUsView(q), loadSKUsView('')]);
+  const [items, allSkus] = await Promise.all([loadSKUsView(q), db.getCachedSKUs()]);
   main.innerHTML = renderSkuPage(items, { searchQuery: q, allSkus });
   bindSkuPage(main, {
     syncEngine,
