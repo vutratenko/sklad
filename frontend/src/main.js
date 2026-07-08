@@ -75,8 +75,9 @@ function getMovementFiltersFromDOM() {
 }
 
 async function refreshStocksPage(filters = {}) {
-  const [rawStocks, skus, locations, warehouses] = await Promise.all([
+  const [rawStocks, wizardStocks, skus, locations, warehouses] = await Promise.all([
     loadStocksView(filters),
+    loadStocksView({}),
     loadSKUs('', true),
     loadAllLocations(),
     loadWarehouses(true),
@@ -90,8 +91,8 @@ async function refreshStocksPage(filters = {}) {
     );
     stocks = stocks.filter((stock) => skuIds.has(stock.sku_id));
   }
-  main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters);
-  bindStocksHandlers({ filters, skus, locations, stocks });
+  main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters, wizardStocks);
+  bindStocksHandlers({ filters, skus, locations, stocks, wizardStocks });
 }
 
 async function refreshMovementsPage(filters = {}) {
@@ -183,7 +184,7 @@ async function loadAllLocations() {
   return all;
 }
 
-function renderStocksPage(stocks, skus, locations, warehouses, filters = {}) {
+function renderStocksPage(stocks, skus, locations, warehouses, filters = {}, wizardStocks = stocks) {
   const skuById = Object.fromEntries(skus.map((sku) => [sku.id, sku]));
   const grouped = groupStocksBySku(stocks, skus);
   const stockList = grouped.map((entry) => {
@@ -229,7 +230,7 @@ function renderStocksPage(stocks, skus, locations, warehouses, filters = {}) {
 
   return `
     <div class="card movement-wizard-card">
-      ${renderMovementWizard(skus, locations, stocks)}
+      ${renderMovementWizard(skus, locations, wizardStocks)}
     </div>
     <div class="card">
       <h3>Остатки</h3>
@@ -292,17 +293,23 @@ async function submitStockMovement(data, resultEl) {
     );
     stocks = stocks.filter((stock) => skuIds.has(stock.sku_id));
   }
-  main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters);
-  bindStocksHandlers({ filters, skus, locations, stocks });
+  main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters, rawStocks);
+  bindStocksHandlers({ filters, skus, locations, stocks, wizardStocks: rawStocks });
 }
 
-function bindStocksHandlers({ filters: initialFilters = {}, skus = [], locations = [], stocks = [] } = {}) {
+function bindStocksHandlers({
+  filters: initialFilters = {},
+  skus = [],
+  locations = [],
+  stocks = [],
+  wizardStocks = stocks,
+} = {}) {
   const wizardRoot = document.getElementById('movement-wizard');
   if (wizardRoot) {
     bindMovementWizard(wizardRoot, {
       skus,
       locations,
-      stocks,
+      stocks: wizardStocks,
       initialSkuId: initialFilters.sku_id,
       onSubmit: submitStockMovement,
     });
@@ -352,7 +359,7 @@ function bindStocksHandlers({ filters: initialFilters = {}, skus = [], locations
       startWizardForSku(wizardRoot, {
         skus,
         locations,
-        stocks,
+        stocks: wizardStocks,
         skuId: btn.dataset.skuId,
         operationType: btn.dataset.type,
       });
