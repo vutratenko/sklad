@@ -37,6 +37,35 @@ export function resetWizardState() {
   wizardState = defaultState();
 }
 
+export function renderMovementOpIconButtons({ skuId, action = 'stock-sku-op' } = {}) {
+  return `
+    <div class="movement-op-grid movement-op-grid-icons">
+      ${OPERATION_TYPES.map((op) => `
+        <button type="button" class="movement-op-btn movement-op-${escapeHtml(op.value)} movement-op-btn-icon-only" data-action="${escapeHtml(action)}" data-type="${escapeHtml(op.value)}" data-sku-id="${escapeHtml(skuId)}" aria-label="${escapeHtml(op.label)}" title="${escapeHtml(op.label)}">
+          <span class="movement-op-icon">${OP_ICONS[op.value] || ''}</span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+export function startWizardForSku(root, { skus, locations, stocks, skuId, operationType }) {
+  const sku = skus.find((item) => item.id === skuId);
+  if (!sku || !root) return;
+
+  wizardState = {
+    ...defaultState(),
+    expanded: true,
+    step: 'details',
+    operationType: operationType || 'receipt',
+    category: categoryLabel(sku.category),
+    skuId: sku.id,
+    searchQuery: '',
+  };
+  rerenderWizard(root, skus, locations, stocks);
+  root.closest('.movement-wizard-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 export function categoryLabel(category) {
   return category || UNCATEGORIZED;
 }
