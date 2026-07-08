@@ -10,8 +10,15 @@ import {
 
 function isNetworkError(err) {
   if (!err) return false;
-  if (err instanceof TypeError) return true;
+  if (err instanceof TypeError || err.name === 'AbortError' || err.name === 'TimeoutError') return true;
   return /network|fetch|failed to fetch/i.test(String(err.message || ''));
+}
+
+function backendOnline() {
+  if (typeof globalThis.__skladBackendOnline === 'boolean') {
+    return globalThis.__skladBackendOnline;
+  }
+  return !!navigator.onLine;
 }
 
 export async function loadSKUs(q = '', activeOnly = false) {
@@ -118,9 +125,9 @@ export async function lookupBarcode(barcode) {
     return { barcode: code, sku: await enrichSkuPhoto(sku), stocks, source: 'cache' };
   }
 
-  if (navigator.onLine) {
+  if (backendOnline()) {
     try {
-      const resp = await apiFetch(`/barcodes/${encodeURIComponent(code)}`);
+      const resp = await apiFetch(`/barcodes/${encodeURIComponent(code)}`, { timeoutMs: 2000 });
       if (resp.sku) await db.putSKU(resp.sku);
       if (resp.stocks?.length) await db.cacheStocks(resp.stocks);
       if (resp.sku?.photo_url) await cacheServerPhoto(resp.sku.id, resp.sku.photo_url);
@@ -164,10 +171,10 @@ export async function lookupSKU(skuId) {
 
   if (navigator.onLine) {
     try {
-      const sku = await apiFetch(`/skus/${id}`);
+      const sku = await apiFetch(`/skus/${id}`, { timeoutMs: 2000 });
       await db.putSKU(sku);
       if (sku.photo_url) await cacheServerPhoto(sku.id, sku.photo_url);
-      const stocksResp = await apiFetch(`/stocks?sku_id=${encodeURIComponent(id)}`);
+      const stocksResp = await apiFetch(`/stocks?sku_id=${encodeURIComponent(id)}`, { timeoutMs: 2000 });
       const stocks = stocksResp.items || [];
       if (stocks.length) await db.cacheStocks(stocks);
       return {

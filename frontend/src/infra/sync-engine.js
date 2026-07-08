@@ -19,14 +19,17 @@ function uuid() {
 }
 
 async function apiFetch(path, options = {}) {
+  const { timeoutMs, ...fetchOptions } = options || {};
+  const signal = timeoutMs ? AbortSignal.timeout(timeoutMs) : fetchOptions.signal;
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       'Content-Type': 'application/json',
       'X-Request-ID': uuid(),
       ...authHeaders(),
-      ...options.headers,
+      ...fetchOptions.headers,
     },
-    ...options,
+    ...fetchOptions,
+    signal,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

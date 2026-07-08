@@ -32,6 +32,16 @@ let authConfig = null;
 let currentUser = null;
 let router = null;
 let stopCameraScan = null;
+let backendReachable = true;
+
+async function checkBackendReachability() {
+  try {
+    const res = await fetch('/api/v1/health', { cache: 'no-store', signal: AbortSignal.timeout(2500) });
+    backendReachable = !!res.ok;
+  } catch {
+    backendReachable = false;
+  }
+}
 
 function readPendingFilters(key) {
   const raw = sessionStorage.getItem(key);
@@ -91,7 +101,8 @@ function refreshDataInBackground(renderCurrent) {
 }
 
 function updateNetworkStatus() {
-  const online = navigator.onLine;
+  const online = navigator.onLine && backendReachable;
+  globalThis.__skladBackendOnline = online;
   networkStatus.textContent = online ? 'online' : 'offline';
   networkStatus.classList.toggle('offline', !online);
 }
@@ -782,6 +793,7 @@ function bindScanHandlers({ autostart = false } = {}) {
 }
 
 window.addEventListener('online', async () => {
+  await checkBackendReachability();
   updateNetworkStatus();
   try {
     currentUser = await ensureAuth() || currentUser;
@@ -794,9 +806,10 @@ window.addEventListener('online', async () => {
 });
 
 window.addEventListener('offline', () => {
+  backendReachable = false;
   updateNetworkStatus();
 });
-updateNetworkStatus();
+globalThis.__skladBackendOnline = false;
 
 if (menuToggle) {
   menuToggle.addEventListener('click', () => {
@@ -824,12 +837,18 @@ async function bootstrap() {
   } catch {
     authConfig = null;
   }
+  await checkBackendReachability();
+  updateNetworkStatus();
   currentUser = await ensureAuth();
   updateUserStatus();
   updateNavigationVisibility();
   router = initRouter(renderRoute);
   syncEngine.sync();
   setInterval(() => syncEngine.sync(), 30000);
+  setInterval(async () => {
+    await checkBackendReachability();
+    updateNetworkStatus();
+  }, 15000);
 }
 
 bootstrap();
