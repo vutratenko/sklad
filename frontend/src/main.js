@@ -3,6 +3,7 @@ import { bindMovementWizard, renderMovementWizard } from './app/movement-wizard.
 import { bindSkuPage, renderSkuPage } from './app/sku-page.js';
 import { stockedWarehouses } from './app/home.js';
 import { isNavViewVisible } from './app/navigation.js';
+import { isLocalPhotoUrl } from './app/photo-store.js';
 import {
   createLocation,
   createWarehouse,
@@ -131,7 +132,9 @@ function escapeHtml(s) {
 }
 
 function skuPhotoSrc(item, fallback = '') {
-  return item?.photo_src || item?.photo_url || fallback;
+  if (item?.photo_src) return item.photo_src;
+  if (item?.photo_url && !isLocalPhotoUrl(item.photo_url)) return item.photo_url;
+  return fallback;
 }
 
 function formatDate(iso) {
