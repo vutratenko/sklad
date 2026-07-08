@@ -1,7 +1,7 @@
 import { initRouter } from './app/router.js';
-import { bindMovementWizard, renderMovementWizard } from './app/movement-wizard.js';
+import { bindMovementWizard, categoryLabel, renderMovementOpIconButtons, renderMovementWizard, startWizardForSku } from './app/movement-wizard.js';
 import { bindSkuPage, renderSkuPage } from './app/sku-page.js';
-import { stockedWarehouses } from './app/home.js';
+import { stockedCategories, stockedWarehouses } from './app/home.js';
 import { isNavViewVisible } from './app/navigation.js';
 import { isLocalPhotoUrl } from './app/photo-store.js';
 import {
@@ -16,6 +16,7 @@ import {
 } from './app/views/topology.js';
 import { loadSKUs, lookupScanCode } from './app/views/catalog.js';
 import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue } from './app/views.js';
+import { groupStocksBySku } from './app/views/stocks.js';
 import { isCameraScanSupported, parseQrScanValue, startCameraScan } from './app/views/scan.js';
 import { OPERATION_TYPES, submitMovement } from './app/views/movements.js';
 import { SyncEngine, db, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
@@ -33,6 +34,7 @@ let currentUser = null;
 let router = null;
 let stopCameraScan = null;
 let backendReachable = true;
+let expandedStockSkuId = null;
 
 async function checkBackendReachability() {
   try {
@@ -59,6 +61,7 @@ function getStockFiltersFromDOM() {
     q: document.getElementById('stock-search')?.value.trim() || '',
     warehouse_id: document.getElementById('stock-filter-wh')?.value || '',
     location_id: document.getElementById('stock-filter-loc')?.value || '',
+    category: document.getElementById('stock-filter-category')?.value || '',
   };
 }
 
@@ -72,12 +75,21 @@ function getMovementFiltersFromDOM() {
 }
 
 async function refreshStocksPage(filters = {}) {
-  const [stocks, skus, locations, warehouses] = await Promise.all([
+  const [rawStocks, skus, locations, warehouses] = await Promise.all([
     loadStocksView(filters),
     loadSKUs('', true),
     loadAllLocations(),
     loadWarehouses(true),
   ]);
+  let stocks = rawStocks;
+  if (filters.category) {
+    const skuIds = new Set(
+      skus
+        .filter((sku) => categoryLabel(sku.category) === filters.category)
+        .map((sku) => sku.id),
+    );
+    stocks = stocks.filter((stock) => skuIds.has(stock.sku_id));
+  }
   main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters);
   bindStocksHandlers({ filters, skus, locations, stocks });
 }
@@ -173,20 +185,28 @@ async function loadAllLocations() {
 
 function renderStocksPage(stocks, skus, locations, warehouses, filters = {}) {
   const skuById = Object.fromEntries(skus.map((sku) => [sku.id, sku]));
-  const stockList = stocks.map((s) => {
-    const photoSrc = skuPhotoSrc(skuById[s.sku_id], s.photo_url);
+  const grouped = groupStocksBySku(stocks, skus);
+  const stockList = grouped.map((entry) => {
+    const photoSrc = skuPhotoSrc(skuById[entry.sku_id]);
+    const expanded = expandedStockSkuId === entry.sku_id;
+    const warehouseLines = entry.warehouses.map((warehouse) => `
+      <span class="stock-wh-chip">${escapeHtml(warehouse.name)}: ${warehouse.quantity}</span>
+    `).join('');
     return `
-    <div class="card">
+    <div class="card stock-sku-card${expanded ? ' stock-sku-card-expanded' : ''}" data-action="stock-sku-toggle" data-sku-id="${escapeHtml(entry.sku_id)}" role="button" tabindex="0" aria-expanded="${expanded ? 'true' : 'false'}">
       <div class="sku-row">
         ${photoSrc ? `<img class="sku-photo" src="${escapeHtml(photoSrc)}" alt="" />` : '<div class="sku-photo sku-photo-empty">—</div>'}
         <div class="sku-info">
-          <h3>${escapeHtml(s.sku_name || 'SKU')}</h3>
-          <div class="meta">
-            ${s.quantity} ${escapeHtml(s.unit || 'шт')} · ${escapeHtml(s.warehouse || '')} / ${escapeHtml(s.location || '')}
-          </div>
-          ${s.lot_code ? `<div class="meta">Партия: ${escapeHtml(s.lot_code)}${s.expiry_date ? ` · до ${formatDate(s.expiry_date)}` : ''}</div>` : ''}
+          <h3>${escapeHtml(entry.sku_name)}</h3>
+          <div class="meta stock-sku-total">${entry.totalQty} ${escapeHtml(entry.unit)}</div>
+          <div class="stock-wh-list">${warehouseLines}</div>
         </div>
       </div>
+      ${expanded ? `
+        <div class="stock-sku-actions">
+          ${renderMovementOpIconButtons({ skuId: entry.sku_id })}
+        </div>
+      ` : ''}
     </div>
   `;
   }).join('');
@@ -200,6 +220,12 @@ function renderStocksPage(stocks, skus, locations, warehouses, filters = {}) {
   const locOptions = locSource
     .map((l) => `<option value="${l.id}"${filters.location_id === l.id ? ' selected' : ''}>${escapeHtml(l.warehouse_name)} / ${escapeHtml(l.name)}</option>`)
     .join('');
+  const categoryFilter = filters.category
+    ? `<div class="stock-active-filter">
+        <span>Категория: <strong>${escapeHtml(filters.category)}</strong></span>
+        <button type="button" class="nav-btn" id="stock-clear-category">Сбросить</button>
+      </div>`
+    : '';
 
   return `
     <div class="card movement-wizard-card">
@@ -207,6 +233,8 @@ function renderStocksPage(stocks, skus, locations, warehouses, filters = {}) {
     </div>
     <div class="card">
       <h3>Остатки</h3>
+      <input type="hidden" id="stock-filter-category" value="${escapeHtml(filters.category || '')}" />
+      ${categoryFilter}
       <div class="form-row"><label>Поиск</label><input id="stock-search" placeholder="название SKU" value="${escapeHtml(filters.q || '')}" /></div>
       <div class="form-row"><label>Склад</label><select id="stock-filter-wh"><option value="">Все склады</option>${whOptions}</select></div>
       <div class="form-row"><label>Место</label><select id="stock-filter-loc"><option value="">Все места</option>${locOptions}</select></div>
@@ -249,12 +277,21 @@ async function submitStockMovement(data, resultEl) {
     resultEl.textContent = 'Движение проведено';
   }
   const filters = getStockFiltersFromDOM();
-  const [stocks, skus, locations, warehouses] = await Promise.all([
+  const [rawStocks, skus, locations, warehouses] = await Promise.all([
     loadStocksView(filters),
     loadSKUs('', true),
     loadAllLocations(),
     loadWarehouses(true),
   ]);
+  let stocks = rawStocks;
+  if (filters.category) {
+    const skuIds = new Set(
+      skus
+        .filter((sku) => categoryLabel(sku.category) === filters.category)
+        .map((sku) => sku.id),
+    );
+    stocks = stocks.filter((stock) => skuIds.has(stock.sku_id));
+  }
   main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters);
   bindStocksHandlers({ filters, skus, locations, stocks });
 }
@@ -282,6 +319,45 @@ function bindStocksHandlers({ filters: initialFilters = {}, skus = [], locations
     await refreshStocksPage(filters);
   });
   document.getElementById('stock-filter-loc')?.addEventListener('change', applyStockFilters);
+  document.getElementById('stock-clear-category')?.addEventListener('click', async () => {
+    const filters = getStockFiltersFromDOM();
+    filters.category = '';
+    expandedStockSkuId = null;
+    await refreshStocksPage(filters);
+  });
+
+  main.querySelectorAll('[data-action="stock-sku-toggle"]').forEach((card) => {
+    const toggleCard = () => {
+      const skuId = card.dataset.skuId;
+      expandedStockSkuId = expandedStockSkuId === skuId ? null : skuId;
+      void refreshStocksPage(getStockFiltersFromDOM());
+    };
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('[data-action="stock-sku-op"]')) return;
+      toggleCard();
+    });
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleCard();
+      }
+    });
+  });
+
+  main.querySelectorAll('[data-action="stock-sku-op"]').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const wizardRoot = document.getElementById('movement-wizard');
+      if (!wizardRoot) return;
+      startWizardForSku(wizardRoot, {
+        skus,
+        locations,
+        stocks,
+        skuId: btn.dataset.skuId,
+        operationType: btn.dataset.type,
+      });
+    });
+  });
 }
 
 function bindMovementsHandlers() {
@@ -294,11 +370,15 @@ function bindMovementsHandlers() {
 }
 
 async function refreshHomePage() {
-  const [stocks, warehouses] = await Promise.all([
+  const [stocks, warehouses, skus] = await Promise.all([
     loadStocksView(),
     loadWarehouses(true),
+    loadSKUs('', true),
   ]);
-  main.innerHTML = renderHome(stockedWarehouses(stocks, warehouses));
+  main.innerHTML = renderHome(
+    stockedWarehouses(stocks, warehouses),
+    stockedCategories(stocks, skus),
+  );
   bindHomeHandlers();
 }
 
@@ -505,11 +585,17 @@ function bindWarehouseHandlers() {
   });
 }
 
-function renderHome(warehouseChips = []) {
+function renderHome(warehouseChips = [], categoryChips = []) {
   const chips = warehouseChips.map((warehouse) => `
     <a class="chip-link" href="/stocks" data-action="home-stock-wh" data-warehouse-id="${escapeHtml(warehouse.id)}">
       <span class="chip-label">${escapeHtml(warehouse.name)}</span>
       <span class="chip-count">${warehouse.skuCount} SKU</span>
+    </a>
+  `).join('');
+  const categoryItems = categoryChips.map((category) => `
+    <a class="chip-link" href="/stocks" data-action="home-stock-cat" data-category="${escapeHtml(category.name)}">
+      <span class="chip-label">${escapeHtml(category.name)}</span>
+      <span class="chip-count">${category.skuCount} SKU · ${category.unitCount} шт</span>
     </a>
   `).join('');
   return `
@@ -523,6 +609,10 @@ function renderHome(warehouseChips = []) {
       <h3>Склады с остатками</h3>
       ${chips ? `<div class="chip-list">${chips}</div>` : '<p class="empty">Нет складов с остатками</p>'}
     </div>
+    <div class="card">
+      <h3>Категории</h3>
+      ${categoryItems ? `<div class="chip-list">${categoryItems}</div>` : '<p class="empty">Нет категорий с остатками</p>'}
+    </div>
   `;
 }
 
@@ -531,6 +621,14 @@ function bindHomeHandlers() {
     link.addEventListener('click', (event) => {
       event.preventDefault();
       sessionStorage.setItem('sklad_stock_filters', JSON.stringify({ warehouse_id: link.dataset.warehouseId }));
+      router?.navigate('/stocks');
+    });
+  });
+
+  main.querySelectorAll('[data-action="home-stock-cat"]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      sessionStorage.setItem('sklad_stock_filters', JSON.stringify({ category: link.dataset.category }));
       router?.navigate('/stocks');
     });
   });
@@ -673,6 +771,7 @@ async function renderRoute(route) {
       refreshDataInBackground(refreshHomePage);
     } else if (route.path === '/stocks') {
       const pending = readPendingFilters('sklad_stock_filters');
+      if (Object.keys(pending).length) expandedStockSkuId = null;
       await refreshStocksPage(pending);
       refreshDataInBackground(async () => refreshStocksPage(getStockFiltersFromDOM()));
     } else if (route.path === '/movements') {

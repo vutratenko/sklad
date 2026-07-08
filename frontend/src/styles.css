@@ -889,6 +889,69 @@ button.primary:hover:not(:disabled) {
   background: var(--color-surface-3);
 }
 
+.movement-op-grid-icons {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.movement-op-btn-icon-only {
+  min-height: 3.25rem;
+  padding: var(--space-2);
+}
+
+.stock-sku-card {
+  cursor: pointer;
+}
+
+.stock-sku-card:hover {
+  border-color: var(--color-border-strong);
+}
+
+.stock-sku-card-expanded {
+  border-color: var(--color-border-strong);
+}
+
+.stock-sku-total {
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.stock-wh-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.stock-wh-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.stock-sku-actions {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.stock-active-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-surface-2);
+  font-size: var(--font-size-sm);
+}
+
 .wizard-search {
   position: relative;
   margin-bottom: var(--space-3);

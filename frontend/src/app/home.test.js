@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stockedWarehouses } from './home.js';
+import { stockedCategories, stockedWarehouses } from './home.js';
 
 describe('home warehouse chips', () => {
   it('returns warehouses that have at least one stock unit', () => {
@@ -39,6 +39,42 @@ describe('home warehouse chips', () => {
 
     expect(stockedWarehouses(stocks, [{ id: 'wh-1', name: 'Кухня' }])).toEqual([
       { id: 'wh-1', name: 'Кухня', skuCount: 2, unitCount: 6 },
+    ]);
+  });
+});
+
+describe('home category chips', () => {
+  it('returns categories with sku and unit counts', () => {
+    const stocks = [
+      { sku_id: 'sku-1', quantity: 2 },
+      { sku_id: 'sku-1', quantity: 3 },
+      { sku_id: 'sku-2', quantity: 4 },
+      { sku_id: 'sku-3', quantity: 0 },
+    ];
+    const skus = [
+      { id: 'sku-1', category: 'бакалея' },
+      { id: 'sku-2', category: 'бакалея' },
+      { id: 'sku-3', category: 'прочее' },
+    ];
+
+    expect(stockedCategories(stocks, skus)).toEqual([
+      { name: 'бакалея', skuCount: 2, unitCount: 9 },
+    ]);
+  });
+
+  it('groups uncategorized skus', () => {
+    const stocks = [
+      { sku_id: 'sku-1', quantity: 1 },
+      { sku_id: 'sku-2', quantity: 2 },
+    ];
+    const skus = [
+      { id: 'sku-1', category: '' },
+      { id: 'sku-2', category: 'консервы' },
+    ];
+
+    expect(stockedCategories(stocks, skus)).toEqual([
+      { name: 'Без категории', skuCount: 1, unitCount: 1 },
+      { name: 'консервы', skuCount: 1, unitCount: 2 },
     ]);
   });
 });
