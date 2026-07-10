@@ -19,7 +19,7 @@ import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue } from '
 import { groupStocksBySku } from './app/views/stocks.js';
 import { isCameraScanSupported, parseQrScanValue, startCameraScan } from './app/views/scan.js';
 import { OPERATION_TYPES, submitMovement } from './app/views/movements.js';
-import { SyncEngine, db, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
+import { DATA_UPDATED_EVENT, SyncEngine, db, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
 import { ensureAuth, handleOAuthCallback, hasOAuthCallback, loadAuthConfig, logout, startLogin } from './infra/auth.js';
 
 const main = document.getElementById('main');
@@ -35,6 +35,7 @@ let router = null;
 let stopCameraScan = null;
 let backendReachable = true;
 let expandedStockSkuId = null;
+let suppressDataUpdatedRefresh = false;
 
 async function checkBackendReachability() {
   try {
@@ -107,10 +108,37 @@ async function refreshMovementsPage(filters = {}) {
 function refreshDataInBackground(renderCurrent) {
   if (!currentUser) return;
   const routePath = window.location.pathname || '/';
+  suppressDataUpdatedRefresh = true;
   void syncEngine.refreshLocalData().then(async () => {
     if ((window.location.pathname || '/') !== routePath) return;
     await renderCurrent();
-  }).catch(() => {});
+  }).catch(() => {}).finally(() => {
+    suppressDataUpdatedRefresh = false;
+  });
+}
+
+async function refreshCurrentViewAfterDataUpdate() {
+  if (suppressDataUpdatedRefresh || !isAuthenticated()) return;
+  const routePath = window.location.pathname || '/';
+  try {
+    if (routePath === '/warehouses') {
+      main.innerHTML = renderWarehouses(await loadWarehouses());
+      bindWarehouseHandlers();
+    } else if (routePath === '/') {
+      await refreshHomePage();
+    } else if (routePath === '/stocks') {
+      await refreshStocksPage(getStockFiltersFromDOM());
+    } else if (routePath === '/movements') {
+      await refreshMovementsPage(getMovementFiltersFromDOM());
+    } else if (routePath === '/skus') {
+      await refreshSkuPage();
+    } else if (routePath === '/sync') {
+      main.innerHTML = renderSyncPanel(await loadSyncQueue());
+      bindSyncHandlers();
+    }
+  } catch {
+    // Keep the current screen if a background refresh races with navigation or offline state.
+  }
 }
 
 function updateNetworkStatus() {
@@ -935,6 +963,10 @@ const syncEngine = new SyncEngine(({ pending, conflicts }) => {
   const label = conflicts > 0 ? `sync: ${pending}+${conflicts}!` : `sync: ${pending}`;
   syncStatus.textContent = label;
   syncStatus.classList.toggle('pending', pending > 0 || conflicts > 0);
+});
+
+window.addEventListener(DATA_UPDATED_EVENT, () => {
+  void refreshCurrentViewAfterDataUpdate();
 });
 
 async function bootstrap() {

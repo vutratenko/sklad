@@ -4,6 +4,7 @@ import { backoffMs, isConflictCode, isOpReadyForPush } from './sync-utils.js';
 
 const API_BASE = '/api/v1';
 const DEVICE_ID_KEY = 'sklad_device_id';
+export const DATA_UPDATED_EVENT = 'sklad:data-updated';
 
 function getDeviceId() {
   let id = localStorage.getItem(DEVICE_ID_KEY);
@@ -203,6 +204,7 @@ export class SyncEngine {
         const locs = await apiFetch(`/warehouses/${wh.id}/locations?active_only=true`);
         await db.cacheLocations(wh.id, locs.items || []);
       }
+      notifyDataUpdated();
     } catch {
       // offline or server error — use cached data
     }
@@ -214,6 +216,14 @@ export class SyncEngine {
     const conflicts = ops.filter((o) => o.status === 'conflict').length;
     this.onStatusChange({ pending, conflicts, total: ops.length });
   }
+}
+
+function notifyDataUpdated() {
+  if (!globalThis.window?.dispatchEvent) return;
+  const event = typeof CustomEvent === 'function'
+    ? new CustomEvent(DATA_UPDATED_EVENT, { detail: { source: 'sync' } })
+    : Object.assign(new Event(DATA_UPDATED_EVENT), { detail: { source: 'sync' } });
+  window.dispatchEvent(event);
 }
 
 export async function queueMovement(payload) {
