@@ -75,15 +75,8 @@ function getMovementFiltersFromDOM() {
   return filters;
 }
 
-async function refreshStocksPage(filters = {}) {
-  const [rawStocks, wizardStocks, skus, locations, warehouses] = await Promise.all([
-    loadStocksView(filters),
-    loadStocksView({}),
-    loadSKUs('', true),
-    loadAllLocations(),
-    loadWarehouses(true),
-  ]);
-  let stocks = rawStocks;
+async function filterStocksForPage(filters, skus) {
+  let stocks = await loadStocksView(filters);
   if (filters.category) {
     const skuIds = new Set(
       skus
@@ -92,8 +85,31 @@ async function refreshStocksPage(filters = {}) {
     );
     stocks = stocks.filter((stock) => skuIds.has(stock.sku_id));
   }
+  return stocks;
+}
+
+async function refreshStocksPage(filters = {}) {
+  const [wizardStocks, skus, locations, warehouses] = await Promise.all([
+    loadStocksView({}),
+    loadSKUs('', true),
+    loadAllLocations(),
+    loadWarehouses(true),
+  ]);
+  const stocks = await filterStocksForPage(filters, skus);
   main.innerHTML = renderStocksPage(stocks, skus, locations, warehouses, filters, wizardStocks);
   bindStocksHandlers({ filters, skus, locations, stocks, wizardStocks });
+}
+
+async function refreshStockListOnly({ skus, locations, wizardStocks }) {
+  const filters = getStockFiltersFromDOM();
+  const stocks = await filterStocksForPage(filters, skus);
+  const list = document.getElementById('stock-list');
+  if (!list) {
+    await refreshStocksPage(filters);
+    return;
+  }
+  list.innerHTML = renderStockSkuCards(stocks, skus);
+  bindStockCardHandlers({ skus, locations, stocks, wizardStocks });
 }
 
 async function refreshMovementsPage(filters = {}) {
@@ -212,7 +228,7 @@ async function loadAllLocations() {
   return all;
 }
 
-function renderStocksPage(stocks, skus, locations, warehouses, filters = {}, wizardStocks = stocks) {
+function renderStockSkuCards(stocks, skus) {
   const skuById = Object.fromEntries(skus.map((sku) => [sku.id, sku]));
   const grouped = groupStocksBySku(stocks, skus);
   const stockList = grouped.map((entry) => {
@@ -239,7 +255,10 @@ function renderStocksPage(stocks, skus, locations, warehouses, filters = {}, wiz
     </div>
   `;
   }).join('');
+  return stockList || '<p class="empty">Нет запасов</p>';
+}
 
+function renderStocksPage(stocks, skus, locations, warehouses, filters = {}, wizardStocks = stocks) {
   const whOptions = warehouses
     .map((w) => `<option value="${w.id}"${filters.warehouse_id === w.id ? ' selected' : ''}>${escapeHtml(w.name)}</option>`)
     .join('');
@@ -264,11 +283,11 @@ function renderStocksPage(stocks, skus, locations, warehouses, filters = {}, wiz
       <h3>Остатки</h3>
       <input type="hidden" id="stock-filter-category" value="${escapeHtml(filters.category || '')}" />
       ${categoryFilter}
-      <div class="form-row"><label>Поиск</label><input id="stock-search" placeholder="название SKU" value="${escapeHtml(filters.q || '')}" /></div>
+      <div class="form-row"><label>Поиск</label><input id="stock-search" placeholder="название SKU" value="${escapeHtml(filters.q || '')}" autocomplete="off" /></div>
       <div class="form-row"><label>Склад</label><select id="stock-filter-wh"><option value="">Все склады</option>${whOptions}</select></div>
       <div class="form-row"><label>Место</label><select id="stock-filter-loc"><option value="">Все места</option>${locOptions}</select></div>
     </div>
-    ${stockList || '<p class="empty">Нет запасов</p>'}
+    <div id="stock-list">${renderStockSkuCards(stocks, skus)}</div>
   `;
 }
 
@@ -325,6 +344,41 @@ async function submitStockMovement(data, resultEl) {
   bindStocksHandlers({ filters, skus, locations, stocks, wizardStocks: rawStocks });
 }
 
+function bindStockCardHandlers({ skus = [], locations = [], stocks = [], wizardStocks = stocks } = {}) {
+  main.querySelectorAll('#stock-list [data-action="stock-sku-toggle"]').forEach((card) => {
+    const toggleCard = async () => {
+      const skuId = card.dataset.skuId;
+      expandedStockSkuId = expandedStockSkuId === skuId ? null : skuId;
+      await refreshStockListOnly({ skus, locations, wizardStocks });
+    };
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('[data-action="stock-sku-op"]')) return;
+      void toggleCard();
+    });
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        void toggleCard();
+      }
+    });
+  });
+
+  main.querySelectorAll('#stock-list [data-action="stock-sku-op"]').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const wizardRoot = document.getElementById('movement-wizard');
+      if (!wizardRoot) return;
+      startWizardForSku(wizardRoot, {
+        skus,
+        locations,
+        stocks: wizardStocks,
+        skuId: btn.dataset.skuId,
+        operationType: btn.dataset.type,
+      });
+    });
+  });
+}
+
 function bindStocksHandlers({
   filters: initialFilters = {},
   skus = [],
@@ -343,17 +397,17 @@ function bindStocksHandlers({
     });
   }
 
-  const applyStockFilters = async () => {
-    await refreshStocksPage(getStockFiltersFromDOM());
-  };
-
-  document.getElementById('stock-search')?.addEventListener('input', applyStockFilters);
+  document.getElementById('stock-search')?.addEventListener('input', () => {
+    void refreshStockListOnly({ skus, locations, wizardStocks });
+  });
   document.getElementById('stock-filter-wh')?.addEventListener('change', async () => {
     const filters = getStockFiltersFromDOM();
     filters.location_id = '';
     await refreshStocksPage(filters);
   });
-  document.getElementById('stock-filter-loc')?.addEventListener('change', applyStockFilters);
+  document.getElementById('stock-filter-loc')?.addEventListener('change', async () => {
+    await refreshStocksPage(getStockFiltersFromDOM());
+  });
   document.getElementById('stock-clear-category')?.addEventListener('click', async () => {
     const filters = getStockFiltersFromDOM();
     filters.category = '';
@@ -361,38 +415,7 @@ function bindStocksHandlers({
     await refreshStocksPage(filters);
   });
 
-  main.querySelectorAll('[data-action="stock-sku-toggle"]').forEach((card) => {
-    const toggleCard = () => {
-      const skuId = card.dataset.skuId;
-      expandedStockSkuId = expandedStockSkuId === skuId ? null : skuId;
-      void refreshStocksPage(getStockFiltersFromDOM());
-    };
-    card.addEventListener('click', (event) => {
-      if (event.target.closest('[data-action="stock-sku-op"]')) return;
-      toggleCard();
-    });
-    card.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        toggleCard();
-      }
-    });
-  });
-
-  main.querySelectorAll('[data-action="stock-sku-op"]').forEach((btn) => {
-    btn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      const wizardRoot = document.getElementById('movement-wizard');
-      if (!wizardRoot) return;
-      startWizardForSku(wizardRoot, {
-        skus,
-        locations,
-        stocks: wizardStocks,
-        skuId: btn.dataset.skuId,
-        operationType: btn.dataset.type,
-      });
-    });
-  });
+  bindStockCardHandlers({ skus, locations, stocks, wizardStocks });
 }
 
 function bindMovementsHandlers() {
