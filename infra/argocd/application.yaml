@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: oci://ghcr.io/vutratenko/charts/sklad
     path: "."
-    targetRevision: "0.1.46"
+    targetRevision: "0.1.47"
     helm:
       valuesObject:
         api:
