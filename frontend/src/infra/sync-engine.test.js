@@ -13,10 +13,17 @@ vi.mock('./indexeddb.js', () => dbMock);
 vi.mock('./auth.js', () => ({ authHeaders: () => ({}) }));
 vi.mock('../app/photo-store.js', () => ({ prefetchSkuPhotos: vi.fn() }));
 
-function okJson(body) {
+function okJson(body, { status = 200 } = {}) {
+  const text = body == null ? '' : JSON.stringify(body);
   return {
-    ok: true,
-    json: async () => body,
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 204 ? 'No Content' : 'OK',
+    text: async () => text,
+    json: async () => {
+      if (!text) throw new SyntaxError('Unexpected end of JSON input');
+      return JSON.parse(text);
+    },
   };
 }
 
@@ -55,5 +62,12 @@ describe('SyncEngine', () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener.mock.calls[0][0].detail).toEqual({ source: 'sync' });
+  });
+
+  it('treats DELETE 204 responses as success without parsing JSON', async () => {
+    const { apiFetch } = await import('./sync-engine.js');
+    fetch.mockResolvedValueOnce(okJson(null, { status: 204 }));
+
+    await expect(apiFetch('/locations/loc-1', { method: 'DELETE' })).resolves.toBeNull();
   });
 });

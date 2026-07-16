@@ -321,7 +321,15 @@ export async function getCachedWarehouses() {
 }
 
 export async function cacheLocations(warehouseId, items) {
-  for (const item of items) {
+  const incoming = items || [];
+  const keep = new Set(incoming.map((item) => item.id));
+  const existing = await getCachedLocations(warehouseId);
+  for (const old of existing) {
+    if (!keep.has(old.id)) {
+      await removeLocation(old.id);
+    }
+  }
+  for (const item of incoming) {
     await put('locations', { ...item, warehouse_id: item.warehouse_id || warehouseId });
   }
 }

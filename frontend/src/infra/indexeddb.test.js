@@ -71,4 +71,20 @@ describe('openDB', () => {
 
     await expect(Promise.race([openDB(), timeout])).resolves.toBeTruthy();
   });
+
+  it('replaces cached locations for a warehouse during sync refresh', async () => {
+    const { cacheLocations, getCachedLocations, putLocation } = await import('./indexeddb.js');
+    await putLocation({ id: 'loc-old', warehouse_id: 'wh-1', name: 'Old', code: 'old' });
+    await putLocation({ id: 'loc-keep', warehouse_id: 'wh-1', name: 'Keep', code: 'keep' });
+    await putLocation({ id: 'loc-other', warehouse_id: 'wh-2', name: 'Other', code: 'other' });
+
+    await cacheLocations('wh-1', [{ id: 'loc-keep', name: 'Keep updated', code: 'keep' }]);
+
+    await expect(getCachedLocations('wh-1')).resolves.toEqual([
+      { id: 'loc-keep', warehouse_id: 'wh-1', name: 'Keep updated', code: 'keep' },
+    ]);
+    await expect(getCachedLocations('wh-2')).resolves.toEqual([
+      { id: 'loc-other', warehouse_id: 'wh-2', name: 'Other', code: 'other' },
+    ]);
+  });
 });

@@ -756,7 +756,12 @@ function bindLocationHandlers(warehouseId) {
 
   main.querySelectorAll(`#locs-${warehouseId} [data-action="del-loc"]`).forEach((btn) => {
     btn.addEventListener('click', async () => {
-      await deleteLocation(btn.dataset.id);
+      try {
+        await deleteLocation(btn.dataset.id);
+      } catch (err) {
+        window.alert(err?.message || 'Не удалось удалить место');
+        return;
+      }
       const panel = document.getElementById(`locs-${btn.dataset.wh}`);
       panel.innerHTML = renderLocationsPanel(btn.dataset.wh, await loadLocations(btn.dataset.wh));
       bindLocationHandlers(btn.dataset.wh);

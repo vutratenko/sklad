@@ -19,6 +19,21 @@ function uuid() {
   return crypto.randomUUID();
 }
 
+async function parseResponseBody(res) {
+  if (res.status === 204 || res.status === 205) {
+    return null;
+  }
+  const text = await res.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('invalid JSON response');
+  }
+}
+
 async function apiFetch(path, options = {}) {
   const { timeoutMs, ...fetchOptions } = options || {};
   const signal = timeoutMs ? AbortSignal.timeout(timeoutMs) : fetchOptions.signal;
@@ -33,10 +48,10 @@ async function apiFetch(path, options = {}) {
     signal,
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || res.statusText);
+    const err = await parseResponseBody(res).catch(() => ({}));
+    throw new Error(err?.message || res.statusText);
   }
-  return res.json();
+  return parseResponseBody(res);
 }
 
 export class SyncEngine {
