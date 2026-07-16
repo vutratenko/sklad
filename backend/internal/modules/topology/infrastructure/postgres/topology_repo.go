@@ -24,6 +24,24 @@ func NewTopologyRepository(pool postgres.Pool) *TopologyRepository {
 func (r *TopologyRepository) CreateWarehouse(ctx context.Context, in domain.CreateWarehouseInput) (*domain.Warehouse, error) {
 	var w domain.Warehouse
 	err := r.pool.QueryRow(ctx, `
+		UPDATE warehouses
+		SET name = $2, is_active = true, updated_at = now()
+		WHERE id = (
+			SELECT id FROM warehouses
+			WHERE code = $1 AND is_active = false
+			ORDER BY updated_at DESC
+			LIMIT 1
+		)
+		RETURNING id, code, name, is_active, created_at, updated_at
+	`, in.Code, in.Name).Scan(&w.ID, &w.Code, &w.Name, &w.IsActive, &w.CreatedAt, &w.UpdatedAt)
+	if err == nil {
+		return &w, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("reactivate warehouse: %w", err)
+	}
+
+	err = r.pool.QueryRow(ctx, `
 		INSERT INTO warehouses (code, name) VALUES ($1, $2)
 		RETURNING id, code, name, is_active, created_at, updated_at
 	`, in.Code, in.Name).Scan(&w.ID, &w.Code, &w.Name, &w.IsActive, &w.CreatedAt, &w.UpdatedAt)
@@ -102,7 +120,29 @@ func (r *TopologyRepository) DeleteWarehouse(ctx context.Context, id uuid.UUID) 
 
 func (r *TopologyRepository) CreateLocation(ctx context.Context, in domain.CreateLocationInput) (*domain.Location, error) {
 	var loc domain.Location
+	// Soft-deleted places keep the unique code; recreate reactivates the same row
+	// so stock history stays attached to the original location id.
 	err := r.pool.QueryRow(ctx, `
+		UPDATE locations
+		SET name = $3, is_active = true, updated_at = now()
+		WHERE id = (
+			SELECT id FROM locations
+			WHERE warehouse_id = $1 AND code = $2 AND is_active = false
+			ORDER BY updated_at DESC
+			LIMIT 1
+		)
+		RETURNING id, warehouse_id, code, name, is_active, created_at, updated_at
+	`, in.WarehouseID, in.Code, in.Name).Scan(
+		&loc.ID, &loc.WarehouseID, &loc.Code, &loc.Name, &loc.IsActive, &loc.CreatedAt, &loc.UpdatedAt,
+	)
+	if err == nil {
+		return &loc, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("reactivate location: %w", err)
+	}
+
+	err = r.pool.QueryRow(ctx, `
 		INSERT INTO locations (warehouse_id, code, name) VALUES ($1, $2, $3)
 		RETURNING id, warehouse_id, code, name, is_active, created_at, updated_at
 	`, in.WarehouseID, in.Code, in.Name).Scan(

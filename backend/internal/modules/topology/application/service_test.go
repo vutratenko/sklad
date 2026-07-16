@@ -16,6 +16,17 @@ type fakeRepo struct {
 }
 
 func (f *fakeRepo) CreateWarehouse(_ context.Context, in topologydomain.CreateWarehouseInput) (*topologydomain.Warehouse, error) {
+	for _, existing := range f.warehouses {
+		if existing.Code != in.Code {
+			continue
+		}
+		if existing.IsActive {
+			return nil, apperr.Conflict("DUPLICATE_WAREHOUSE_CODE", "warehouse code already exists")
+		}
+		existing.Name = in.Name
+		existing.IsActive = true
+		return existing, nil
+	}
 	w := &topologydomain.Warehouse{ID: uuid.New(), Code: in.Code, Name: in.Name, IsActive: true}
 	f.warehouses[w.ID] = w
 	return w, nil
@@ -69,6 +80,17 @@ func (f *fakeRepo) DeleteWarehouse(_ context.Context, id uuid.UUID) error {
 func (f *fakeRepo) CreateLocation(_ context.Context, in topologydomain.CreateLocationInput) (*topologydomain.Location, error) {
 	if _, ok := f.warehouses[in.WarehouseID]; !ok {
 		return nil, apperr.NotFound("warehouse not found")
+	}
+	for _, existing := range f.locations {
+		if existing.WarehouseID != in.WarehouseID || existing.Code != in.Code {
+			continue
+		}
+		if existing.IsActive {
+			return nil, apperr.Conflict("DUPLICATE_LOCATION_CODE", "location code already exists in warehouse")
+		}
+		existing.Name = in.Name
+		existing.IsActive = true
+		return existing, nil
 	}
 	loc := &topologydomain.Location{ID: uuid.New(), WarehouseID: in.WarehouseID, Code: in.Code, Name: in.Name, IsActive: true}
 	f.locations[loc.ID] = loc
@@ -142,18 +164,24 @@ func TestCreateLocation_RequiresWarehouse(t *testing.T) {
 	}
 }
 
-func TestDeleteWarehouse_SoftDelete(t *testing.T) {
+func TestCreateLocation_ReactivatesSoftDeleted(t *testing.T) {
+	whID := uuid.New()
+	locID := uuid.New()
 	repo := &fakeRepo{
-		warehouses: map[uuid.UUID]*topologydomain.Warehouse{},
-		locations:  map[uuid.UUID]*topologydomain.Location{},
+		warehouses: map[uuid.UUID]*topologydomain.Warehouse{
+			whID: {ID: whID, Code: "kitchen", Name: "Kitchen", IsActive: true},
+		},
+		locations: map[uuid.UUID]*topologydomain.Location{
+			locID: {ID: locID, WarehouseID: whID, Code: "box-1", Name: "Old", IsActive: false},
+		},
 	}
 	svc := topologyapp.NewTopologyService(repo)
-	w, _ := svc.CreateWarehouse(context.Background(), topologydomain.CreateWarehouseInput{Code: "kitchen", Name: "Kitchen"})
-	if err := svc.DeleteWarehouse(context.Background(), w.ID.String()); err != nil {
+
+	got, err := svc.CreateLocation(context.Background(), whID.String(), topologydomain.CreateLocationInput{Code: "box-1", Name: "New name"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	got, _ := svc.GetWarehouse(context.Background(), w.ID.String())
-	if got.IsActive {
-		t.Fatal("expected soft-deleted warehouse")
+	if got.ID != locID || !got.IsActive || got.Name != "New name" {
+		t.Fatalf("expected reactivated location, got %+v", got)
 	}
 }

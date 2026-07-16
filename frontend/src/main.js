@@ -592,8 +592,16 @@ function renderWarehouses(warehouses) {
   return `
     <div class="card">
       <h3>Новый склад</h3>
-      <div class="form-row"><label>Код</label><input id="wh-code" placeholder="kitchen" /></div>
-      <div class="form-row"><label>Название</label><input id="wh-name" placeholder="Кухня" /></div>
+      <div class="form-row">
+        <label for="wh-code">Код</label>
+        <input id="wh-code" placeholder="kitchen" autocomplete="off" />
+        <div class="meta">Короткий уникальный идентификатор склада</div>
+      </div>
+      <div class="form-row">
+        <label for="wh-name">Название</label>
+        <input id="wh-name" placeholder="Кухня" autocomplete="off" />
+        <div class="meta">Человекочитаемое имя склада</div>
+      </div>
       <button class="primary" id="wh-create">Создать склад</button>
     </div>
     ${list || '<p class="empty">Нет складов</p>'}
@@ -699,10 +707,10 @@ function bindHomeHandlers() {
 }
 
 function renderLocationsPanel(warehouseId, locs) {
-  const items = locs.map((l) => `
+  const activeLocs = locs.filter((l) => l.is_active !== false);
+  const items = activeLocs.map((l) => `
     <div class="card" style="margin-top:0.5rem">
-      <strong>${escapeHtml(l.name)}</strong> (${escapeHtml(l.code)})
-      <div class="meta">${l.is_active === false ? 'неактивно' : 'активно'}</div>
+      <strong>${escapeHtml(l.name)}</strong> <span class="meta">код: ${escapeHtml(l.code)}</span>
       <div style="margin-top:0.25rem">
         <button class="nav-btn" data-action="edit-loc" data-id="${l.id}" data-wh="${warehouseId}">Изменить</button>
         <button class="nav-btn" data-action="del-loc" data-id="${l.id}" data-wh="${warehouseId}">Удалить</button>
@@ -711,8 +719,16 @@ function renderLocationsPanel(warehouseId, locs) {
   `).join('');
   return `
     <h4>Места хранения</h4>
-    <div class="form-row"><input id="loc-code-${warehouseId}" placeholder="shelf-1" /></div>
-    <div class="form-row"><input id="loc-name-${warehouseId}" placeholder="Полка 1" /></div>
+    <div class="form-row">
+      <label for="loc-code-${warehouseId}">Код</label>
+      <input id="loc-code-${warehouseId}" placeholder="box-1" autocomplete="off" />
+      <div class="meta">Короткий уникальный идентификатор места на этом складе</div>
+    </div>
+    <div class="form-row">
+      <label for="loc-name-${warehouseId}">Название</label>
+      <input id="loc-name-${warehouseId}" placeholder="Косметический ящик" autocomplete="off" />
+      <div class="meta">Человекочитаемое имя, которое видно в списках и остатках</div>
+    </div>
     <button class="primary" data-action="create-loc" data-wh="${warehouseId}">Добавить место</button>
     ${items || '<p class="empty">Нет мест</p>'}
   `;
@@ -723,8 +739,16 @@ function bindLocationHandlers(warehouseId) {
     const wh = e.target.dataset.wh;
     const code = document.getElementById(`loc-code-${wh}`).value.trim();
     const name = document.getElementById(`loc-name-${wh}`).value.trim();
-    if (!code || !name) return;
-    await createLocation(wh, { code, name });
+    if (!code || !name) {
+      window.alert('Укажите код и название места');
+      return;
+    }
+    try {
+      await createLocation(wh, { code, name });
+    } catch (err) {
+      window.alert(err?.message || 'Не удалось создать место');
+      return;
+    }
     const panel = document.getElementById(`locs-${wh}`);
     panel.innerHTML = renderLocationsPanel(wh, await loadLocations(wh));
     bindLocationHandlers(wh);
