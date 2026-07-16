@@ -14,6 +14,12 @@ const pageState = {
   selectedSkuId: null,
   qrCounts: {},
   qrSearchQuery: '',
+  newSkuDraft: {
+    name: '',
+    category: '',
+    unit: 'шт',
+    description: '',
+  },
 };
 
 export function skuQrCodes(sku) {
@@ -60,15 +66,16 @@ function renderCollapsiblePanel({ id, title, expanded, bodyHtml }) {
 }
 
 function renderNewSkuPanel() {
+  const draft = pageState.newSkuDraft;
   return renderCollapsiblePanel({
     id: 'sku-new-panel',
     title: 'Новый SKU',
     expanded: pageState.newSkuExpanded,
     bodyHtml: `
-      <div class="form-row"><label>Название</label><input id="sku-name" placeholder="Томатная паста" /></div>
-      <div class="form-row"><label>Категория</label><input id="sku-category" placeholder="консервы" /></div>
-      <div class="form-row"><label>Единица</label><input id="sku-unit" placeholder="шт" value="шт" /></div>
-      <div class="form-row"><label>Описание</label><input id="sku-desc" placeholder="400г" /></div>
+      <div class="form-row"><label>Название</label><input id="sku-name" placeholder="Томатная паста" value="${escapeHtml(draft.name)}" autocomplete="off" /></div>
+      <div class="form-row"><label>Категория</label><input id="sku-category" placeholder="консервы" value="${escapeHtml(draft.category)}" autocomplete="off" /></div>
+      <div class="form-row"><label>Единица</label><input id="sku-unit" placeholder="шт" value="${escapeHtml(draft.unit || 'шт')}" autocomplete="off" /></div>
+      <div class="form-row"><label>Описание</label><input id="sku-desc" placeholder="400г" value="${escapeHtml(draft.description)}" autocomplete="off" /></div>
       <button class="primary" id="sku-create">Создать SKU</button>
     `,
   });
@@ -190,18 +197,41 @@ function renderSkuCard(sku) {
 }
 
 export function renderSkuPage(items, { searchQuery = '', allSkus = [] } = {}) {
-  const selected = items.find((item) => item.id === pageState.selectedSkuId) || null;
-  const list = items.map((sku) => renderSkuCard(sku)).join('');
-
   return `
     ${renderNewSkuPanel()}
     ${renderQrPrintPanel(allSkus)}
     <div class="card">
-      <div class="form-row"><label>Поиск</label><input id="sku-search" placeholder="название, категория или штрихкод" value="${escapeHtml(searchQuery)}" /></div>
+      <div class="form-row"><label>Поиск</label><input id="sku-search" placeholder="название, категория или штрихкод" value="${escapeHtml(searchQuery)}" autocomplete="off" /></div>
     </div>
+    <div id="sku-results">${renderSkuResults(items)}</div>
+  `;
+}
+
+export function renderSkuResults(items) {
+  const selected = items.find((item) => item.id === pageState.selectedSkuId) || null;
+  const list = items.map((sku) => renderSkuCard(sku)).join('');
+  return `
     ${selected ? renderSkuDetail(selected) : ''}
     ${list || '<p class="empty">Нет SKU</p>'}
   `;
+}
+
+function captureNewSkuDraftFromDom() {
+  pageState.newSkuDraft = {
+    name: document.getElementById('sku-name')?.value ?? pageState.newSkuDraft.name,
+    category: document.getElementById('sku-category')?.value ?? pageState.newSkuDraft.category,
+    unit: document.getElementById('sku-unit')?.value || pageState.newSkuDraft.unit || 'шт',
+    description: document.getElementById('sku-desc')?.value ?? pageState.newSkuDraft.description,
+  };
+}
+
+function clearNewSkuDraft() {
+  pageState.newSkuDraft = {
+    name: '',
+    category: '',
+    unit: 'шт',
+    description: '',
+  };
 }
 
 function restoreFocus(activeId) {
@@ -210,34 +240,106 @@ function restoreFocus(activeId) {
   el?.focus();
 }
 
-export function bindSkuPage(root, { syncEngine, onRefresh }) {
+function togglePanelExpanded(panelId) {
+  if (panelId === 'sku-new-panel') {
+    pageState.newSkuExpanded = !pageState.newSkuExpanded;
+  }
+  if (panelId === 'sku-qr-panel') {
+    pageState.qrPrintExpanded = !pageState.qrPrintExpanded;
+  }
+  const panel = document.getElementById(panelId);
+  const body = panel?.querySelector('.sku-panel-body');
+  const toggle = panel?.querySelector('[data-action="toggle-panel"]');
+  const expanded = panelId === 'sku-new-panel' ? pageState.newSkuExpanded : pageState.qrPrintExpanded;
+  if (body) body.hidden = !expanded;
+  toggle?.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+export function bindSkuResultHandlers(root, { syncEngine, searchInput, refreshResults }) {
+  root.querySelectorAll('[data-action="open-sku"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      pageState.selectedSkuId = btn.dataset.id;
+      await refreshResults(searchInput?.value.trim() || '');
+    });
+  });
+
+  root.querySelectorAll('[data-action="close-sku-detail"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      pageState.selectedSkuId = null;
+      await refreshResults(searchInput?.value.trim() || '');
+    });
+  });
+
+  root.querySelectorAll('[data-action="del-sku"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Удалить SKU?')) return;
+      await deleteSKU(btn.dataset.id);
+      if (pageState.selectedSkuId === btn.dataset.id) {
+        pageState.selectedSkuId = null;
+      }
+      delete pageState.qrCounts[btn.dataset.id];
+      await refreshResults(searchInput?.value.trim() || '');
+    });
+  });
+
+  root.querySelectorAll('[data-action="edit-sku"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const name = prompt('Новое название SKU:');
+      if (!name) return;
+      await updateSKU(btn.dataset.id, { name });
+      await refreshResults(searchInput?.value.trim() || '');
+    });
+  });
+
+  root.querySelectorAll('[data-action="upload-photo"]').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        await uploadPhoto(input.dataset.id, file);
+        syncEngine.sync();
+        await refreshResults(searchInput?.value.trim() || '');
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+export function bindSkuPage(root, { syncEngine, onRefresh, onRefreshResults }) {
+  const refreshResults = onRefreshResults || onRefresh;
+
   root.querySelectorAll('[data-action="toggle-panel"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const panelId = btn.dataset.panel;
-      if (panelId === 'sku-new-panel') {
-        pageState.newSkuExpanded = !pageState.newSkuExpanded;
-      }
-      if (panelId === 'sku-qr-panel') {
-        pageState.qrPrintExpanded = !pageState.qrPrintExpanded;
-      }
-      onRefresh();
+      captureNewSkuDraftFromDom();
+      togglePanelExpanded(btn.dataset.panel);
+    });
+  });
+
+  ['sku-name', 'sku-category', 'sku-unit', 'sku-desc'].forEach((id) => {
+    root.querySelector(`#${id}`)?.addEventListener('input', () => {
+      captureNewSkuDraftFromDom();
     });
   });
 
   root.querySelector('#sku-create')?.addEventListener('click', async () => {
-    const name = document.getElementById('sku-name')?.value.trim();
-    const category = document.getElementById('sku-category')?.value.trim();
-    const unit = document.getElementById('sku-unit')?.value.trim() || 'шт';
-    const description = document.getElementById('sku-desc')?.value.trim();
-    if (!name) return;
-    await createSKU({ name, category, unit, description });
+    captureNewSkuDraftFromDom();
+    const { name, category, unit, description } = pageState.newSkuDraft;
+    if (!name.trim()) return;
+    await createSKU({
+      name: name.trim(),
+      category: category.trim(),
+      unit: unit.trim() || 'шт',
+      description: description.trim(),
+    });
     pageState.newSkuExpanded = false;
+    clearNewSkuDraft();
     await onRefresh();
   });
 
-  const searchInput = root.querySelector('#sku-search') || document.getElementById('sku-search');
+  const searchInput = root.querySelector('#sku-search');
   searchInput?.addEventListener('input', async (e) => {
-    await onRefresh(e.target.value.trim());
+    await refreshResults(e.target.value.trim());
     const input = document.getElementById('sku-search');
     if (input) {
       input.value = e.target.value;
@@ -249,6 +351,7 @@ export function bindSkuPage(root, { syncEngine, onRefresh }) {
   qrSearchInput?.addEventListener('input', async (e) => {
     const activeId = document.activeElement?.id;
     pageState.qrSearchQuery = e.target.value;
+    captureNewSkuDraftFromDom();
     await onRefresh(searchInput?.value.trim() || '');
     restoreFocus(activeId);
     const input = document.getElementById('sku-qr-search');
@@ -264,6 +367,7 @@ export function bindSkuPage(root, { syncEngine, onRefresh }) {
       if (!skuId) return;
       pageState.qrCounts[skuId] = pageState.qrCounts[skuId] || 1;
       pageState.qrSearchQuery = '';
+      captureNewSkuDraftFromDom();
       await onRefresh(searchInput?.value.trim() || '');
       document.getElementById('sku-qr-search')?.focus();
     });
@@ -272,58 +376,12 @@ export function bindSkuPage(root, { syncEngine, onRefresh }) {
   root.querySelectorAll('[data-action="qr-remove"]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       delete pageState.qrCounts[btn.dataset.id];
+      captureNewSkuDraftFromDom();
       await onRefresh(searchInput?.value.trim() || '');
     });
   });
 
-  root.querySelectorAll('[data-action="open-sku"]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      pageState.selectedSkuId = btn.dataset.id;
-      await onRefresh(searchInput?.value.trim() || '');
-    });
-  });
-
-  root.querySelectorAll('[data-action="close-sku-detail"]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      pageState.selectedSkuId = null;
-      await onRefresh(searchInput?.value.trim() || '');
-    });
-  });
-
-  root.querySelectorAll('[data-action="del-sku"]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Удалить SKU?')) return;
-      await deleteSKU(btn.dataset.id);
-      if (pageState.selectedSkuId === btn.dataset.id) {
-        pageState.selectedSkuId = null;
-      }
-      delete pageState.qrCounts[btn.dataset.id];
-      await onRefresh(searchInput?.value.trim() || '');
-    });
-  });
-
-  root.querySelectorAll('[data-action="edit-sku"]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const name = prompt('Новое название SKU:');
-      if (!name) return;
-      await updateSKU(btn.dataset.id, { name });
-      await onRefresh(searchInput?.value.trim() || '');
-    });
-  });
-
-  root.querySelectorAll('[data-action="upload-photo"]').forEach((input) => {
-    input.addEventListener('change', async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      try {
-        await uploadPhoto(input.dataset.id, file);
-        syncEngine.sync();
-        await onRefresh(searchInput?.value.trim() || '');
-      } catch (err) {
-        alert(err.message);
-      }
-    });
-  });
+  bindSkuResultHandlers(root, { syncEngine, searchInput, refreshResults });
 
   root.querySelectorAll('[data-action="qr-count"]').forEach((input) => {
     input.addEventListener('input', () => {
@@ -354,4 +412,10 @@ export function resetSkuPageStateForTests() {
   pageState.selectedSkuId = null;
   pageState.qrCounts = {};
   pageState.qrSearchQuery = '';
+  pageState.newSkuDraft = {
+    name: '',
+    category: '',
+    unit: 'шт',
+    description: '',
+  };
 }

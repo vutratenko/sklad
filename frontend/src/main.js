@@ -1,6 +1,6 @@
 import { initRouter } from './app/router.js';
 import { bindMovementWizard, categoryLabel, renderMovementOpIconButtons, renderMovementWizard, startWizardForSku } from './app/movement-wizard.js';
-import { bindSkuPage, renderSkuPage } from './app/sku-page.js';
+import { bindSkuPage, bindSkuResultHandlers, renderSkuPage, renderSkuResults } from './app/sku-page.js';
 import { stockedCategories, stockedWarehouses } from './app/home.js';
 import { isNavViewVisible } from './app/navigation.js';
 import { isLocalPhotoUrl } from './app/photo-store.js';
@@ -138,8 +138,7 @@ async function refreshCurrentViewAfterDataUpdate() {
   const routePath = window.location.pathname || '/';
   try {
     if (routePath === '/warehouses') {
-      main.innerHTML = renderWarehouses(await loadWarehouses());
-      bindWarehouseHandlers();
+      await refreshWarehouseListOnly();
     } else if (routePath === '/') {
       await refreshHomePage();
     } else if (routePath === '/stocks') {
@@ -147,7 +146,7 @@ async function refreshCurrentViewAfterDataUpdate() {
     } else if (routePath === '/movements') {
       await refreshMovementsPage(getMovementFiltersFromDOM());
     } else if (routePath === '/skus') {
-      await refreshSkuPage();
+      await refreshSkuListOnly();
     } else if (routePath === '/sync') {
       main.innerHTML = renderSyncPanel(await loadSyncQueue());
       bindSyncHandlers();
@@ -449,6 +448,25 @@ async function refreshSkuPage(searchQuery) {
   bindSkuPage(main, {
     syncEngine,
     onRefresh: refreshSkuPage,
+    onRefreshResults: refreshSkuListOnly,
+  });
+}
+
+async function refreshSkuListOnly(searchQuery) {
+  const results = document.getElementById('sku-results');
+  if (!results) {
+    await refreshSkuPage(searchQuery);
+    return;
+  }
+  const q = typeof searchQuery === 'string'
+    ? searchQuery
+    : (document.getElementById('sku-search')?.value.trim() ?? '');
+  const items = await loadSKUsView(q);
+  results.innerHTML = renderSkuResults(items);
+  bindSkuResultHandlers(results, {
+    syncEngine,
+    searchInput: document.getElementById('sku-search'),
+    refreshResults: refreshSkuListOnly,
   });
 }
 
@@ -575,7 +593,7 @@ function bindSyncHandlers() {
   });
 }
 
-function renderWarehouses(warehouses) {
+function renderWarehouseCards(warehouses) {
   const list = warehouses.map((w) => `
     <div class="card" data-warehouse-id="${w.id}">
       <h3>${escapeHtml(w.name)} <span class="meta">(${escapeHtml(w.code)})</span></h3>
@@ -588,9 +606,12 @@ function renderWarehouses(warehouses) {
       <div id="locs-${w.id}" class="locations-panel" hidden></div>
     </div>
   `).join('');
+  return list || '<p class="empty">Нет складов</p>';
+}
 
+function renderWarehouses(warehouses) {
   return `
-    <div class="card">
+    <div class="card" id="warehouse-create-card">
       <h3>Новый склад</h3>
       <div class="form-row">
         <label for="wh-code">Код</label>
@@ -604,39 +625,105 @@ function renderWarehouses(warehouses) {
       </div>
       <button class="primary" id="wh-create">Создать склад</button>
     </div>
-    ${list || '<p class="empty">Нет складов</p>'}
+    <div id="warehouse-list">${renderWarehouseCards(warehouses)}</div>
   `;
 }
 
-function bindWarehouseHandlers() {
+function openLocationPanelIds() {
+  return Array.from(main.querySelectorAll('.locations-panel:not([hidden])'))
+    .map((panel) => panel.id.replace(/^locs-/, ''))
+    .filter(Boolean);
+}
+
+function snapshotLocationCreateDrafts(warehouseIds) {
+  const drafts = {};
+  for (const warehouseId of warehouseIds) {
+    drafts[warehouseId] = {
+      code: document.getElementById(`loc-code-${warehouseId}`)?.value ?? '',
+      name: document.getElementById(`loc-name-${warehouseId}`)?.value ?? '',
+    };
+  }
+  return drafts;
+}
+
+async function restoreOpenLocationPanels(warehouseIds, drafts = {}) {
+  for (const warehouseId of warehouseIds) {
+    const panel = document.getElementById(`locs-${warehouseId}`);
+    if (!panel) continue;
+    const locs = await loadLocations(warehouseId);
+    panel.innerHTML = renderLocationsPanel(warehouseId, locs);
+    panel.hidden = false;
+    bindLocationHandlers(warehouseId);
+    const draft = drafts[warehouseId];
+    if (!draft) continue;
+    const codeInput = document.getElementById(`loc-code-${warehouseId}`);
+    const nameInput = document.getElementById(`loc-name-${warehouseId}`);
+    if (codeInput) codeInput.value = draft.code;
+    if (nameInput) nameInput.value = draft.name;
+  }
+}
+
+async function refreshWarehouseListOnly() {
+  const list = document.getElementById('warehouse-list');
+  if (!list) {
+    main.innerHTML = renderWarehouses(await loadWarehouses());
+    bindWarehouseHandlers();
+    return;
+  }
+  const openPanels = openLocationPanelIds();
+  const locationDrafts = snapshotLocationCreateDrafts(openPanels);
+  list.innerHTML = renderWarehouseCards(await loadWarehouses());
+  bindWarehouseListHandlers();
+  await restoreOpenLocationPanels(openPanels, locationDrafts);
+}
+
+function bindWarehouseCreateHandler() {
   document.getElementById('wh-create')?.addEventListener('click', async () => {
     const code = document.getElementById('wh-code').value.trim();
     const name = document.getElementById('wh-name').value.trim();
     if (!code || !name) return;
-    await createWarehouse({ code, name });
-    main.innerHTML = renderWarehouses(await loadWarehouses());
-    bindWarehouseHandlers();
+    try {
+      await createWarehouse({ code, name });
+    } catch (err) {
+      window.alert(err?.message || 'Не удалось создать склад');
+      return;
+    }
+    const codeInput = document.getElementById('wh-code');
+    const nameInput = document.getElementById('wh-name');
+    if (codeInput) codeInput.value = '';
+    if (nameInput) nameInput.value = '';
+    await refreshWarehouseListOnly();
   });
+}
 
-  main.querySelectorAll('[data-action="del-wh"]').forEach((btn) => {
+function bindWarehouseListHandlers() {
+  main.querySelectorAll('#warehouse-list [data-action="del-wh"]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      await deleteWarehouse(btn.dataset.id);
-      main.innerHTML = renderWarehouses(await loadWarehouses());
-      bindWarehouseHandlers();
+      try {
+        await deleteWarehouse(btn.dataset.id);
+      } catch (err) {
+        window.alert(err?.message || 'Не удалось удалить склад');
+        return;
+      }
+      await refreshWarehouseListOnly();
     });
   });
 
-  main.querySelectorAll('[data-action="edit-wh"]').forEach((btn) => {
+  main.querySelectorAll('#warehouse-list [data-action="edit-wh"]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const name = prompt('Новое название склада:');
       if (!name) return;
-      await updateWarehouse(btn.dataset.id, { name });
-      main.innerHTML = renderWarehouses(await loadWarehouses());
-      bindWarehouseHandlers();
+      try {
+        await updateWarehouse(btn.dataset.id, { name });
+      } catch (err) {
+        window.alert(err?.message || 'Не удалось обновить склад');
+        return;
+      }
+      await refreshWarehouseListOnly();
     });
   });
 
-  main.querySelectorAll('[data-action="show-locs"]').forEach((btn) => {
+  main.querySelectorAll('#warehouse-list [data-action="show-locs"]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const panel = document.getElementById(`locs-${btn.dataset.id}`);
       if (!panel.hidden) {
@@ -649,6 +736,11 @@ function bindWarehouseHandlers() {
       bindLocationHandlers(btn.dataset.id);
     });
   });
+}
+
+function bindWarehouseHandlers() {
+  bindWarehouseCreateHandler();
+  bindWarehouseListHandlers();
 }
 
 function renderHome(warehouseChips = [], categoryChips = []) {
@@ -849,10 +941,7 @@ async function renderRoute(route) {
     if (route.path === '/warehouses') {
       main.innerHTML = renderWarehouses(await loadWarehouses());
       bindWarehouseHandlers();
-      refreshDataInBackground(async () => {
-        main.innerHTML = renderWarehouses(await loadWarehouses());
-        bindWarehouseHandlers();
-      });
+      refreshDataInBackground(refreshWarehouseListOnly);
     } else if (route.path === '/') {
       await refreshHomePage();
       refreshDataInBackground(refreshHomePage);
@@ -867,7 +956,7 @@ async function renderRoute(route) {
       refreshDataInBackground(async () => refreshMovementsPage(getMovementFiltersFromDOM()));
     } else if (route.path === '/skus') {
       await refreshSkuPage();
-      refreshDataInBackground(refreshSkuPage);
+      refreshDataInBackground(refreshSkuListOnly);
     } else if (route.path === '/scan') {
       const autostart = sessionStorage.getItem('sklad_scan_autostart') === '1';
       if (autostart) sessionStorage.removeItem('sklad_scan_autostart');

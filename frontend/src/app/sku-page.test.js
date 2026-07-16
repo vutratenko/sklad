@@ -48,4 +48,10 @@ describe('sku page', () => {
     expect(filterSkusForQrSearch(sampleSkus, 'sku-2')).toHaveLength(0);
     expect(filterSkusForQrSearch(sampleSkus, '4601', new Set(['sku-1']))).toHaveLength(0);
   });
+
+  it('keeps create form and list containers separate for lazy refresh', () => {
+    const html = renderSkuPage(sampleSkus, { allSkus: sampleSkus });
+    expect(html).toContain('id="sku-results"');
+    expect(html).toContain('sku-new-panel');
+  });
 });
