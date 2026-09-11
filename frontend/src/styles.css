@@ -234,6 +234,18 @@ label.nav-btn:focus-within {
   box-shadow: var(--shadow-control);
 }
 
+[data-theme="light"] .header::after {
+  filter: invert(1);
+}
+
+[data-theme="light"] .header h1::before {
+  filter: invert(1);
+  background:
+    linear-gradient(180deg, rgb(0 0 0 / 0.04), transparent),
+    url("/sklad-icon.png") center / cover no-repeat,
+    var(--color-surface-2);
+}
+
 .status-bar {
   position: relative;
   z-index: 1;
