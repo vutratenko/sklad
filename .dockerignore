@@ -4,6 +4,7 @@
 **/.git
 **/node_modules
 frontend/dist
+site/
 backend/bin
 **/*.md
 !infra/helm/**/README.md
