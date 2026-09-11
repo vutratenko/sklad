@@ -34,6 +34,17 @@ export const OPERATION_TYPES = [
   { value: 'adjustment', label: 'Корректировка' },
 ];
 
+export const OPERATION_SYMBOLS = {
+  receipt: '+',
+  issue: '−',
+  transfer: '↔',
+  adjustment: '±',
+};
+
+export function operationSymbol(operationType) {
+  return OPERATION_SYMBOLS[operationType] || '•';
+}
+
 export const ISSUE_REASONS = [
   { value: 'used', label: 'Использовано' },
   { value: 'spoiled', label: 'Испортилось' },

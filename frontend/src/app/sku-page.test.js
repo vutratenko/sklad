@@ -33,6 +33,19 @@ describe('sku page', () => {
     resetSkuPageStateForTests();
   });
 
+  it('renders page heading for catalog screen', () => {
+    const html = renderSkuPage(sampleSkus, { allSkus: sampleSkus });
+    expect(html).toContain('page-heading-eyebrow');
+    expect(html).toContain('КАТАЛОГ');
+    expect(html).toContain('Товары и этикетки.');
+  });
+
+  it('renders product art fallback when SKU has category but no photo', () => {
+    const html = renderSkuResults(sampleSkus);
+    expect(html).toContain('product-art');
+    expect(html).not.toMatch(/data-id="sku-1"[\s\S]*sku-photo-empty/);
+  });
+
   it('renders collapsible new SKU and QR print panels', () => {
     const html = renderSkuPage(sampleSkus, { allSkus: sampleSkus });
     expect(html).toContain('sku-new-panel');
@@ -87,5 +100,14 @@ describe('sku page', () => {
     expect(html).toContain('id="sku-edit-category-sku-1"');
     expect(html).toContain('data-action="save-sku"');
     expect(html).not.toContain('data-action="edit-sku"');
+  });
+
+  it('renders category label and barcode block in detail panel', () => {
+    setSelectedSkuIdForTests('sku-1');
+    const html = renderSkuResults(sampleSkus);
+    expect(html).toContain('sku-category-label');
+    expect(html).toContain('sku-barcode-block');
+    expect(html).toContain('barcode-lines');
+    expect(html).toContain('product-art-large');
   });
 });

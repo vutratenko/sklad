@@ -4,6 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#111317" />
+  <script>
+    (function () {
+      var stored = localStorage.getItem('sklad_theme');
+      var theme = stored === 'light' || stored === 'dark'
+        ? stored
+        : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.dataset.theme = theme;
+      document.querySelector('meta[name="theme-color"]').setAttribute('content', theme === 'light' ? '#ffffff' : '#111317');
+    })();
+  </script>
   <link rel="icon" type="image/png" href="/sklad-icon.png" />
   <link rel="apple-touch-icon" href="/sklad-icon.png" />
   <title>Sklad WMS</title>
@@ -19,6 +29,7 @@
         <span></span>
       </button>
       <div class="status-bar">
+        <button type="button" class="badge theme-toggle" id="theme-toggle" aria-pressed="false" aria-label="Переключить тему">☾</button>
         <span id="user-status" class="badge">...</span>
         <span id="network-status" class="badge">online</span>
         <span id="sync-status" class="badge">sync: 0</span>

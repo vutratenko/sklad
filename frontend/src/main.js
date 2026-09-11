@@ -18,7 +18,10 @@ import { loadSKUs, lookupScanCode } from './app/views/catalog.js';
 import { loadSKUsView, loadStocksView, loadMovementsView, loadSyncQueue } from './app/views.js';
 import { groupStocksBySku } from './app/views/stocks.js';
 import { isCameraScanSupported, parseQrScanValue, startCameraScan } from './app/views/scan.js';
-import { OPERATION_TYPES, submitMovement } from './app/views/movements.js';
+import { renderPageHeading } from './app/page-heading.js';
+import { renderSkuVisual } from './app/product-art.js';
+import { initTheme, toggleTheme, updateThemeToggle } from './app/theme.js';
+import { OPERATION_TYPES, operationSymbol, submitMovement } from './app/views/movements.js';
 import { DATA_UPDATED_EVENT, SyncEngine, db, discardSyncOp, retrySyncOp } from './infra/sync-engine.js';
 import { ensureAuth, handleOAuthCallback, hasOAuthCallback, loadAuthConfig, logout, startLogin } from './infra/auth.js';
 
@@ -28,6 +31,7 @@ const syncStatus = document.getElementById('sync-status');
 const userStatus = document.getElementById('user-status');
 const mainNav = document.getElementById('main-nav');
 const menuToggle = document.getElementById('menu-toggle');
+const themeToggle = document.getElementById('theme-toggle');
 
 let authConfig = null;
 let currentUser = null;
@@ -161,6 +165,7 @@ function updateNetworkStatus() {
   globalThis.__skladBackendOnline = online;
   networkStatus.textContent = online ? 'online' : 'offline';
   networkStatus.classList.toggle('offline', !online);
+  networkStatus.classList.toggle('badge-online', online);
 }
 
 function updateUserStatus() {
@@ -231,20 +236,30 @@ function renderStockSkuCards(stocks, skus) {
   const skuById = Object.fromEntries(skus.map((sku) => [sku.id, sku]));
   const grouped = groupStocksBySku(stocks, skus);
   const stockList = grouped.map((entry) => {
-    const photoSrc = skuPhotoSrc(skuById[entry.sku_id]);
+    const sku = skuById[entry.sku_id];
+    const photoSrc = skuPhotoSrc(sku);
     const expanded = expandedStockSkuId === entry.sku_id;
     const warehouseLines = entry.warehouses.map((warehouse) => `
       <span class="stock-wh-chip">${escapeHtml(warehouse.name)}: ${warehouse.quantity}</span>
     `).join('');
     return `
     <div class="card stock-sku-card${expanded ? ' stock-sku-card-expanded' : ''}" data-action="stock-sku-toggle" data-sku-id="${escapeHtml(entry.sku_id)}" role="button" tabindex="0" aria-expanded="${expanded ? 'true' : 'false'}">
-      <div class="sku-row">
-        ${photoSrc ? `<img class="sku-photo" src="${escapeHtml(photoSrc)}" alt="" />` : '<div class="sku-photo sku-photo-empty">—</div>'}
-        <div class="sku-info">
-          <h3>${escapeHtml(entry.sku_name)}</h3>
-          <div class="meta stock-sku-total">${entry.totalQty} ${escapeHtml(entry.unit)}</div>
-          <div class="stock-wh-list">${warehouseLines}</div>
+      <div class="stock-row-grid">
+        <div class="stock-row-main">
+          <div class="sku-row">
+            ${renderSkuVisual({
+              photoSrc: photoSrc ? escapeHtml(photoSrc) : '',
+              category: sku?.category,
+              emptyLabel: '—',
+            })}
+            <div class="sku-info">
+              <h3>${escapeHtml(entry.sku_name)}</h3>
+              <div class="meta">${escapeHtml(sku?.category || '')}</div>
+              <div class="stock-wh-list">${warehouseLines}</div>
+            </div>
+          </div>
         </div>
+        <div class="stock-row-qty">${entry.totalQty}<span>${escapeHtml(entry.unit)}</span></div>
       </div>
       ${expanded ? `
         <div class="stock-sku-actions">
@@ -275,11 +290,12 @@ function renderStocksPage(stocks, skus, locations, warehouses, filters = {}, wiz
     : '';
 
   return `
+    ${renderPageHeading({ eyebrow: 'МОЙ ДОМАШНИЙ СКЛАД', title: 'Всё под рукой.' })}
     <div class="card movement-wizard-card">
       ${renderMovementWizard(skus, locations, wizardStocks)}
     </div>
     <div class="card">
-      <h3>Остатки</h3>
+      <h3>Фильтры</h3>
       <input type="hidden" id="stock-filter-category" value="${escapeHtml(filters.category || '')}" />
       ${categoryFilter}
       <div class="form-row"><label>Поиск</label><input id="stock-search" placeholder="название SKU" value="${escapeHtml(filters.q || '')}" autocomplete="off" /></div>
@@ -299,15 +315,21 @@ function renderMovementsPage(items, skus, filters = {}) {
     .map((s) => `<option value="${s.id}"${filters.sku_id === s.id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`)
     .join('');
   const list = items.map((m) => `
-    <div class="card">
-      <h3>${escapeHtml(OP_LABELS[m.operation_type] || m.operation_type)}: ${escapeHtml(m.sku_name)}</h3>
-      <div class="meta">${m.quantity} шт · ${formatDate(m.occurred_at)}</div>
-      ${m.reason_code ? `<div class="meta">Причина: ${escapeHtml(m.reason_code)}</div>` : ''}
+    <div class="card movement-card">
+      <div class="movement-row">
+        <span class="movement-symbol">${escapeHtml(operationSymbol(m.operation_type))}</span>
+        <div class="movement-row-body">
+          <h3>${escapeHtml(OP_LABELS[m.operation_type] || m.operation_type)}: ${escapeHtml(m.sku_name)}</h3>
+          <div class="meta">${m.quantity} шт · ${formatDate(m.occurred_at)}</div>
+          ${m.reason_code ? `<div class="meta">Причина: ${escapeHtml(m.reason_code)}</div>` : ''}
+        </div>
+      </div>
     </div>
   `).join('');
   return `
+    ${renderPageHeading({ eyebrow: 'ЖУРНАЛ', title: 'История в деталях.' })}
     <div class="card">
-      <h3>Журнал движений</h3>
+      <h3>Фильтры</h3>
       <div class="form-row"><label>Тип операции</label><select id="mv-filter-type">${filterOptions}</select></div>
       <div class="form-row"><label>SKU</label><select id="mv-filter-sku"><option value="">Все SKU</option>${skuOptions}</select></div>
     </div>
@@ -615,6 +637,7 @@ function renderWarehouseCards(warehouses) {
 
 function renderWarehouses(warehouses) {
   return `
+    ${renderPageHeading({ eyebrow: 'СТРУКТУРА', title: 'У каждого — своё место.' })}
     <div class="card" id="warehouse-create-card">
       <h3>Новый склад</h3>
       <div class="form-row">
@@ -1118,6 +1141,11 @@ document.addEventListener('gesturestart', (event) => {
   event.preventDefault();
 });
 
+initTheme();
+themeToggle?.addEventListener('click', () => {
+  toggleTheme();
+});
+
 async function bootstrap() {
   try {
     authConfig = await loadAuthConfig();
@@ -1126,6 +1154,7 @@ async function bootstrap() {
   }
   await checkBackendReachability();
   updateNetworkStatus();
+  updateThemeToggle();
   currentUser = await ensureAuth();
   updateUserStatus();
   updateNavigationVisibility();

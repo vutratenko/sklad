@@ -6,6 +6,8 @@ import {
   uploadPhoto,
 } from './views/catalog.js';
 import { collectCategories } from './movement-wizard.js';
+import { renderPageHeading } from './page-heading.js';
+import { renderSkuVisual } from './product-art.js';
 import { generateBatchSKUQRCodePDF } from './sku-label-pdf.js';
 import { isLocalPhotoUrl } from './photo-store.js';
 
@@ -64,6 +66,28 @@ function skuPhotoSrc(item) {
   if (item?.photo_src) return item.photo_src;
   if (item?.photo_url && !isLocalPhotoUrl(item.photo_url)) return item.photo_url;
   return '';
+}
+
+function renderSkuThumb(sku, { large = false } = {}) {
+  const photoSrc = skuPhotoSrc(sku);
+  return renderSkuVisual({
+    photoSrc: photoSrc ? escapeHtml(photoSrc) : '',
+    category: sku?.category,
+    large,
+  });
+}
+
+function renderBarcodeBlock(sku) {
+  const code = (sku.barcodes || [])[0];
+  if (!code) {
+    return `<div class="meta">${sku.pending ? 'будет назначен при синхронизации' : 'не назначен'}</div>`;
+  }
+  return `
+    <div class="sku-barcode-block">
+      <div class="barcode-lines" aria-hidden="true"></div>
+      <span class="sku-barcode-code">${escapeHtml(code)}</span>
+    </div>
+  `;
 }
 
 function renderCollapsiblePanel({ id, title, expanded, bodyHtml }) {
@@ -169,23 +193,22 @@ function renderQrPrintPanel(allSkus) {
 }
 
 function renderSkuDetail(sku) {
-  const barcodes = (sku.barcodes || []).length
-    ? sku.barcodes.map((code) => `<div class="meta">${escapeHtml(code)}</div>`).join('')
-    : `<div class="meta">${sku.pending ? 'будет назначен при синхронизации' : 'не назначен'}</div>`;
+  const categoryLabel = [sku.category, sku.unit, sku.description].filter(Boolean).join(' · ').toUpperCase();
 
   return `
     <div class="card sku-detail-card" id="sku-detail-${sku.id}">
       <div class="sku-row">
-        ${skuPhotoSrc(sku) ? `<img class="sku-photo sku-photo-large" src="${escapeHtml(skuPhotoSrc(sku))}" alt="" />` : '<div class="sku-photo sku-photo-large sku-photo-empty">нет фото</div>'}
+        ${renderSkuThumb(sku, { large: true })}
         <div class="sku-info">
+          ${categoryLabel ? `<div class="sku-category-label">${escapeHtml(categoryLabel)}</div>` : ''}
           <div class="form-row"><label>Название</label><input id="sku-edit-name-${sku.id}" value="${escapeHtml(sku.name)}" autocomplete="off" /></div>
           <div class="form-row"><label>Категория</label><input id="sku-edit-category-${sku.id}" list="sku-category-options" value="${escapeHtml(sku.category || '')}" autocomplete="off" /></div>
           <div class="form-row"><label>Единица</label><input id="sku-edit-unit-${sku.id}" value="${escapeHtml(sku.unit || 'шт')}" autocomplete="off" /></div>
           <div class="form-row"><label>Описание</label><input id="sku-edit-desc-${sku.id}" value="${escapeHtml(sku.description || '')}" autocomplete="off" /></div>
           <div class="meta">Статус: ${sku.is_active === false ? 'неактивен' : 'активен'}</div>
           <div class="meta">ID: ${escapeHtml(sku.id)}</div>
-          <div class="meta">Штрихкоды:</div>
-          ${barcodes}
+          <div class="meta">Штрихкод</div>
+          ${renderBarcodeBlock(sku)}
           ${sku.pending ? '<div class="meta"><span class="badge">ожидает синхронизации</span></div>' : ''}
           ${sku.photo_pending ? '<div class="meta"><span class="badge">фото ожидает синхронизации</span></div>' : ''}
         </div>
@@ -208,7 +231,7 @@ function renderSkuCard(sku) {
   return `
     <button type="button" class="card sku-card sku-card-clickable${selected ? ' sku-card-selected' : ''}" data-action="open-sku" data-id="${sku.id}">
       <div class="sku-row">
-        ${skuPhotoSrc(sku) ? `<img class="sku-photo" src="${escapeHtml(skuPhotoSrc(sku))}" alt="" />` : '<div class="sku-photo sku-photo-empty">нет фото</div>'}
+        ${renderSkuThumb(sku)}
         <div class="sku-info">
           <h3>${escapeHtml(sku.name)}</h3>
           <div class="meta">${escapeHtml(sku.category || '')} · ${escapeHtml(sku.unit)} · ${sku.is_active === false ? 'неактивен' : 'активен'}${sku.pending ? ' · ожидает синхронизации' : ''}</div>
@@ -222,6 +245,7 @@ function renderSkuCard(sku) {
 
 export function renderSkuPage(items, { searchQuery = '', allSkus = [] } = {}) {
   return `
+    ${renderPageHeading({ eyebrow: 'КАТАЛОГ', title: 'Товары и этикетки.' })}
     ${renderNewSkuPanel()}
     ${renderQrPrintPanel(allSkus)}
     ${renderCategoryDatalist(allSkus)}
