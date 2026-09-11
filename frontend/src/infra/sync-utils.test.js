@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { backoffMs, isConflictCode, isOpReadyForPush } from './sync-utils.js';
+import { backoffMs, isConflictCode, isOpReadyForPush, sortOpsForPush } from './sync-utils.js';
 
 describe('isConflictCode', () => {
   it('recognizes ADR-005 conflict codes', () => {
@@ -28,6 +28,16 @@ describe('isOpReadyForPush', () => {
         now
       )
     ).toBe(true);
+  });
+});
+
+describe('sortOpsForPush', () => {
+  it('sorts operations by createdAt ascending', () => {
+    const sorted = sortOpsForPush([
+      { opId: 'op-2', createdAt: '2026-01-02T00:00:00.000Z' },
+      { opId: 'op-1', createdAt: '2026-01-01T00:00:00.000Z' },
+    ]);
+    expect(sorted.map((op) => op.opId)).toEqual(['op-1', 'op-2']);
   });
 });
 

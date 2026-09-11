@@ -317,11 +317,11 @@ function renderMovementsPage(items, skus, filters = {}) {
 
 async function submitStockMovement(data, resultEl) {
   const res = await submitMovement(data);
-  if (res.queued) {
-    if (resultEl) resultEl.textContent = 'Операция в очереди (offline). Синхронизация при подключении.';
-    syncEngine.sync();
+  if (navigator.onLine) {
+    await syncEngine.sync();
+    if (resultEl) resultEl.textContent = 'Движение проведено';
   } else if (resultEl) {
-    resultEl.textContent = 'Движение проведено';
+    resultEl.textContent = 'Операция в очереди (offline). Синхронизация при подключении.';
   }
   const filters = getStockFiltersFromDOM();
   const [rawStocks, skus, locations, warehouses] = await Promise.all([
@@ -539,7 +539,11 @@ function renderSyncPanel({ ops, cursor }) {
       ? `${OP_LABELS[payload.operation_type] || payload.operation_type}${line ? `, ${line.quantity} шт` : ''}`
       : op.entityType === 'sku_photo'
         ? `фото SKU ${payload.sku_id || ''}`
-        : '';
+        : op.entityType === 'sku' && op.action === 'create'
+          ? `SKU ${payload.name || payload.id || ''}`
+          : op.entityType === 'sku' && op.action === 'update'
+            ? `изменение SKU ${payload.id || ''}`
+            : '';
     const statusLabel = {
       pending: 'ожидает',
       retry_wait: 'повтор',
@@ -1108,6 +1112,10 @@ const syncEngine = new SyncEngine(({ pending, conflicts }) => {
 
 window.addEventListener(DATA_UPDATED_EVENT, () => {
   void refreshCurrentViewAfterDataUpdate();
+});
+
+document.addEventListener('gesturestart', (event) => {
+  event.preventDefault();
 });
 
 async function bootstrap() {

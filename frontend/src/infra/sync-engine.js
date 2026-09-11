@@ -1,6 +1,6 @@
 import * as db from './indexeddb.js';
 import { authHeaders } from './auth.js';
-import { backoffMs, isConflictCode, isOpReadyForPush } from './sync-utils.js';
+import { backoffMs, isConflictCode, isOpReadyForPush, sortOpsForPush } from './sync-utils.js';
 
 const API_BASE = '/api/v1';
 const DEVICE_ID_KEY = 'sklad_device_id';
@@ -65,8 +65,8 @@ export class SyncEngine {
     if (this.running || !navigator.onLine) return;
     this.running = true;
     try {
-      await this.pushPhotos();
       await this.push();
+      await this.pushPhotos();
       await this.pull();
     } finally {
       this.running = false;
@@ -75,7 +75,19 @@ export class SyncEngine {
   }
 
   async pushPhotos() {
-    const ops = (await db.getSyncOps()).filter(
+    const allOps = await db.getSyncOps();
+    const pendingSkuCreateIds = new Set(
+      allOps
+        .filter(
+          (op) =>
+            op.entityType === 'sku'
+            && op.action === 'create'
+            && (op.status === 'pending' || op.status === 'retry_wait'),
+        )
+        .map((op) => op.payload?.id)
+        .filter(Boolean),
+    );
+    const ops = allOps.filter(
       (op) => op.entityType === 'sku_photo' && isOpReadyForPush(op),
     );
     if (ops.length === 0) return;
@@ -86,6 +98,9 @@ export class SyncEngine {
       const skuId = op.payload?.sku_id;
       if (!skuId) {
         await db.removeOp(op.opId);
+        continue;
+      }
+      if (pendingSkuCreateIds.has(skuId)) {
         continue;
       }
 
@@ -121,7 +136,9 @@ export class SyncEngine {
   }
 
   async push() {
-    const pending = (await db.getPendingOps()).filter((op) => op.entityType !== 'sku_photo');
+    const pending = sortOpsForPush(
+      (await db.getPendingOps()).filter((op) => op.entityType !== 'sku_photo'),
+    );
     if (pending.length === 0) return;
 
     const operations = pending.map((op) => ({
@@ -250,7 +267,34 @@ export async function queueMovement(payload) {
     action: 'create',
     payload,
   });
-  await db.applyOptimisticMovement(payload);
+  await db.applyOptimisticMovement(payload, opId);
+  return opId;
+}
+
+export async function queueSkuCreate(payload) {
+  const opId = uuid();
+  await db.enqueueOp({
+    opId,
+    idempotencyKey: opId,
+    entityType: 'sku',
+    action: 'create',
+    payload,
+  });
+  await db.applyOptimisticSku(payload);
+  return opId;
+}
+
+export async function queueSkuUpdate(id, patch) {
+  const opId = uuid();
+  const payload = { id, ...patch };
+  await db.enqueueOp({
+    opId,
+    idempotencyKey: opId,
+    entityType: 'sku',
+    action: 'update',
+    payload,
+  });
+  await db.applyOptimisticSkuUpdate(id, patch);
   return opId;
 }
 

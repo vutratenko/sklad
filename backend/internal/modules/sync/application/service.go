@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/google/uuid"
+	catalogdomain "github.com/vutratenko/sklad/internal/modules/catalog/domain"
 	moveapp "github.com/vutratenko/sklad/internal/modules/movements/application"
 	movedomain "github.com/vutratenko/sklad/internal/modules/movements/domain"
 	"github.com/vutratenko/sklad/internal/shared/apperr"
@@ -63,13 +64,20 @@ type EventStore interface {
 	ListEvents(ctx context.Context, after int64, limit int) ([]SyncEvent, error)
 }
 
+type CatalogApplier interface {
+	Create(ctx context.Context, in catalogdomain.CreateSKUInput) (*catalogdomain.SKU, error)
+	Get(ctx context.Context, id string) (*catalogdomain.SKU, error)
+	Update(ctx context.Context, id string, in catalogdomain.UpdateSKUInput) (*catalogdomain.SKU, error)
+}
+
 type SyncService struct {
 	movements *moveapp.MovementService
 	events    EventStore
+	catalog   CatalogApplier
 }
 
-func NewSyncService(movements *moveapp.MovementService, events EventStore) *SyncService {
-	return &SyncService{movements: movements, events: events}
+func NewSyncService(movements *moveapp.MovementService, events EventStore, catalog CatalogApplier) *SyncService {
+	return &SyncService{movements: movements, events: events, catalog: catalog}
 }
 
 type movementPayload struct {
@@ -82,6 +90,22 @@ type movementPayload struct {
 		FromLocationID *string `json:"from_location_id"`
 		ToLocationID   *string `json:"to_location_id"`
 	} `json:"lines"`
+}
+
+type skuCreatePayload struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	Unit        string `json:"unit"`
+}
+
+type skuUpdatePayload struct {
+	ID          string  `json:"id"`
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	Category    *string `json:"category"`
+	Unit        *string `json:"unit"`
 }
 
 func (s *SyncService) Push(ctx context.Context, req SyncPushRequest) (*SyncPushResponse, error) {
@@ -110,6 +134,27 @@ func (s *SyncService) Push(ctx context.Context, req SyncPushRequest) (*SyncPushR
 					result.Status = "duplicate_replayed"
 				}
 				result.ServerID = res.OperationID.String()
+				resp.AcceptedCount++
+			}
+		} else if op.Entity == "sku" && s.catalog != nil && (op.Action == "create" || op.Action == "update") {
+			applied, serverID, err := s.applySKUOp(ctx, op)
+			if err != nil {
+				result.Status = "rejected"
+				if ae, ok := err.(*apperr.AppError); ok {
+					result.ErrorCode = ae.Code
+					result.Message = ae.Message
+				} else {
+					result.ErrorCode = "INTERNAL_ERROR"
+					result.Message = err.Error()
+				}
+				resp.RejectedCount++
+			} else {
+				if applied {
+					result.Status = "applied"
+				} else {
+					result.Status = "duplicate_replayed"
+				}
+				result.ServerID = serverID
 				resp.AcceptedCount++
 			}
 		} else {
@@ -147,6 +192,57 @@ func (s *SyncService) Pull(ctx context.Context, cursor int64, limit int) (*SyncP
 		Events:     events,
 		HasMore:    hasMore,
 	}, nil
+}
+
+func (s *SyncService) applySKUOp(ctx context.Context, op SyncOperation) (applied bool, serverID string, err error) {
+	switch op.Action {
+	case "create":
+		var payload skuCreatePayload
+		if err := json.Unmarshal(op.Payload, &payload); err != nil {
+			return false, "", apperr.Validation("invalid sku payload")
+		}
+		if payload.ID == "" {
+			return false, "", apperr.Validation("sku id is required")
+		}
+		if _, getErr := s.catalog.Get(ctx, payload.ID); getErr == nil {
+			return false, payload.ID, nil
+		}
+		skuID, parseErr := uuid.Parse(payload.ID)
+		if parseErr != nil {
+			return false, "", apperr.Validation("invalid sku id")
+		}
+		sku, createErr := s.catalog.Create(ctx, catalogdomain.CreateSKUInput{
+			ID:          &skuID,
+			Name:        payload.Name,
+			Description: payload.Description,
+			Category:    payload.Category,
+			Unit:        payload.Unit,
+		})
+		if createErr != nil {
+			return false, "", createErr
+		}
+		return true, sku.ID.String(), nil
+	case "update":
+		var payload skuUpdatePayload
+		if err := json.Unmarshal(op.Payload, &payload); err != nil {
+			return false, "", apperr.Validation("invalid sku payload")
+		}
+		if payload.ID == "" {
+			return false, "", apperr.Validation("sku id is required")
+		}
+		sku, updateErr := s.catalog.Update(ctx, payload.ID, catalogdomain.UpdateSKUInput{
+			Name:        payload.Name,
+			Description: payload.Description,
+			Category:    payload.Category,
+			Unit:        payload.Unit,
+		})
+		if updateErr != nil {
+			return false, "", updateErr
+		}
+		return true, sku.ID.String(), nil
+	default:
+		return false, "", apperr.Validation("unsupported sku action")
+	}
 }
 
 func (s *SyncService) applyMovementOp(ctx context.Context, deviceID string, op SyncOperation) (*moveapp.ApplyResult, error) {

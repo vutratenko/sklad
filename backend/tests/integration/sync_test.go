@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/google/uuid"
+	catalogapp "github.com/vutratenko/sklad/internal/modules/catalog/application"
 	catalogdomain "github.com/vutratenko/sklad/internal/modules/catalog/domain"
 	catalogpg "github.com/vutratenko/sklad/internal/modules/catalog/infrastructure/postgres"
 	moveapp "github.com/vutratenko/sklad/internal/modules/movements/application"
@@ -23,7 +25,8 @@ func TestSyncPushPull(t *testing.T) {
 	skuRepo := catalogpg.NewSKURepository(adapter)
 	topoRepo := toppg.NewTopologyRepository(adapter)
 	moveSvc := moveapp.NewMovementService(adapter)
-	syncSvc := syncapp.NewSyncService(moveSvc, syncpg.NewEventRepository(adapter))
+	catalogSvc := catalogapp.NewCatalogService(skuRepo)
+	syncSvc := syncapp.NewSyncService(moveSvc, syncpg.NewEventRepository(adapter), catalogSvc)
 
 	sku, err := skuRepo.Create(ctx, catalogdomain.CreateSKUInput{Name: "Sync SKU", Unit: "шт"})
 	if err != nil {
@@ -98,5 +101,56 @@ func TestSyncPushPull(t *testing.T) {
 	}
 	if rejectResp.Results[0].ErrorCode != "INSUFFICIENT_STOCK" {
 		t.Fatalf("expected INSUFFICIENT_STOCK, got %s", rejectResp.Results[0].ErrorCode)
+	}
+}
+
+func TestSyncPushSKUCreate(t *testing.T) {
+	ctx, pool := testutil.ConnectAndMigrate(t)
+	adapter := &sharedpg.PoolAdapter{Pool: pool.Pool}
+	skuRepo := catalogpg.NewSKURepository(adapter)
+	catalogSvc := catalogapp.NewCatalogService(skuRepo)
+	syncSvc := syncapp.NewSyncService(nil, syncpg.NewEventRepository(adapter), catalogSvc)
+
+	clientID := uuid.MustParse("66666666-6666-4666-8666-666666666666")
+	payload, _ := json.Marshal(map[string]any{
+		"id": clientID.String(), "name": "Offline Tomato", "category": "консервы", "unit": "шт",
+	})
+	pushResp, err := syncSvc.Push(ctx, syncapp.SyncPushRequest{
+		DeviceID: "sku-sync-device", BatchID: "sku-batch-1", SchemaVersion: 1,
+		Operations: []syncapp.SyncOperation{{
+			OperationID: "sku-op-1", IdempotencyKey: "sku-op-1",
+			Entity: "sku", Action: "create", Payload: payload,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushResp.Results[0].Status != "applied" || pushResp.Results[0].ServerID != clientID.String() {
+		t.Fatalf("expected applied sku create, got %+v", pushResp.Results[0])
+	}
+
+	sku, err := skuRepo.GetByID(ctx, clientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sku.Name != "Offline Tomato" {
+		t.Fatalf("expected synced name, got %q", sku.Name)
+	}
+	if len(sku.Barcodes) != 1 {
+		t.Fatalf("expected auto barcode, got %#v", sku.Barcodes)
+	}
+
+	dupResp, err := syncSvc.Push(ctx, syncapp.SyncPushRequest{
+		DeviceID: "sku-sync-device", BatchID: "sku-batch-2", SchemaVersion: 1,
+		Operations: []syncapp.SyncOperation{{
+			OperationID: "sku-op-2", IdempotencyKey: "sku-op-2",
+			Entity: "sku", Action: "create", Payload: payload,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dupResp.Results[0].Status != "duplicate_replayed" {
+		t.Fatalf("expected duplicate replay, got %+v", dupResp.Results[0])
 	}
 }

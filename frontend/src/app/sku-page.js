@@ -1,10 +1,11 @@
 import {
-  createSKU,
+  createSKUWithPhoto,
   deleteSKU,
   loadSKUs,
   updateSKU,
   uploadPhoto,
 } from './views/catalog.js';
+import { collectCategories } from './movement-wizard.js';
 import { generateBatchSKUQRCodePDF } from './sku-label-pdf.js';
 import { isLocalPhotoUrl } from './photo-store.js';
 
@@ -20,7 +21,21 @@ const pageState = {
     unit: 'шт',
     description: '',
   },
+  newSkuPhotoPreview: '',
 };
+
+export function categoryOptionsForSkus(allSkus) {
+  return collectCategories(allSkus || []).filter((category) => category !== 'Без категории');
+}
+
+function renderCategoryDatalist(allSkus) {
+  const options = categoryOptionsForSkus(allSkus);
+  return `
+    <datalist id="sku-category-options">
+      ${options.map((category) => `<option value="${escapeHtml(category)}"></option>`).join('')}
+    </datalist>
+  `;
+}
 
 export function skuQrCodes(sku) {
   return (sku?.barcodes || []).map((code) => String(code).trim()).filter(Boolean);
@@ -67,15 +82,23 @@ function renderCollapsiblePanel({ id, title, expanded, bodyHtml }) {
 
 function renderNewSkuPanel() {
   const draft = pageState.newSkuDraft;
+  const preview = pageState.newSkuPhotoPreview
+    ? `<img class="sku-photo sku-photo-preview" id="sku-photo-preview" src="${escapeHtml(pageState.newSkuPhotoPreview)}" alt="" />`
+    : '<div class="sku-photo sku-photo-empty sku-photo-preview" id="sku-photo-preview">нет фото</div>';
   return renderCollapsiblePanel({
     id: 'sku-new-panel',
     title: 'Новый SKU',
     expanded: pageState.newSkuExpanded,
     bodyHtml: `
       <div class="form-row"><label>Название</label><input id="sku-name" placeholder="Томатная паста" value="${escapeHtml(draft.name)}" autocomplete="off" /></div>
-      <div class="form-row"><label>Категория</label><input id="sku-category" placeholder="консервы" value="${escapeHtml(draft.category)}" autocomplete="off" /></div>
+      <div class="form-row"><label>Категория</label><input id="sku-category" list="sku-category-options" placeholder="консервы" value="${escapeHtml(draft.category)}" autocomplete="off" /></div>
       <div class="form-row"><label>Единица</label><input id="sku-unit" placeholder="шт" value="${escapeHtml(draft.unit || 'шт')}" autocomplete="off" /></div>
       <div class="form-row"><label>Описание</label><input id="sku-desc" placeholder="400г" value="${escapeHtml(draft.description)}" autocomplete="off" /></div>
+      <div class="form-row">
+        <label>Фото</label>
+        <input type="file" id="sku-photo" accept="image/*" capture="environment" />
+        ${preview}
+      </div>
       <button class="primary" id="sku-create">Создать SKU</button>
     `,
   });
@@ -148,26 +171,27 @@ function renderQrPrintPanel(allSkus) {
 function renderSkuDetail(sku) {
   const barcodes = (sku.barcodes || []).length
     ? sku.barcodes.map((code) => `<div class="meta">${escapeHtml(code)}</div>`).join('')
-    : '<div class="meta">не назначен</div>';
+    : `<div class="meta">${sku.pending ? 'будет назначен при синхронизации' : 'не назначен'}</div>`;
 
   return `
-    <div class="card sku-detail-card" id="sku-detail">
+    <div class="card sku-detail-card" id="sku-detail-${sku.id}">
       <div class="sku-row">
         ${skuPhotoSrc(sku) ? `<img class="sku-photo sku-photo-large" src="${escapeHtml(skuPhotoSrc(sku))}" alt="" />` : '<div class="sku-photo sku-photo-large sku-photo-empty">нет фото</div>'}
         <div class="sku-info">
-          <h3>${escapeHtml(sku.name)}</h3>
-          <div class="meta">Категория: ${escapeHtml(sku.category || '—')}</div>
-          <div class="meta">Единица: ${escapeHtml(sku.unit || 'шт')}</div>
+          <div class="form-row"><label>Название</label><input id="sku-edit-name-${sku.id}" value="${escapeHtml(sku.name)}" autocomplete="off" /></div>
+          <div class="form-row"><label>Категория</label><input id="sku-edit-category-${sku.id}" list="sku-category-options" value="${escapeHtml(sku.category || '')}" autocomplete="off" /></div>
+          <div class="form-row"><label>Единица</label><input id="sku-edit-unit-${sku.id}" value="${escapeHtml(sku.unit || 'шт')}" autocomplete="off" /></div>
+          <div class="form-row"><label>Описание</label><input id="sku-edit-desc-${sku.id}" value="${escapeHtml(sku.description || '')}" autocomplete="off" /></div>
           <div class="meta">Статус: ${sku.is_active === false ? 'неактивен' : 'активен'}</div>
-          ${sku.description ? `<div class="meta">Описание: ${escapeHtml(sku.description)}</div>` : ''}
           <div class="meta">ID: ${escapeHtml(sku.id)}</div>
           <div class="meta">Штрихкоды:</div>
           ${barcodes}
+          ${sku.pending ? '<div class="meta"><span class="badge">ожидает синхронизации</span></div>' : ''}
           ${sku.photo_pending ? '<div class="meta"><span class="badge">фото ожидает синхронизации</span></div>' : ''}
         </div>
       </div>
       <div class="sku-detail-actions">
-        <button class="nav-btn" data-action="edit-sku" data-id="${sku.id}">Изменить</button>
+        <button class="nav-btn primary" data-action="save-sku" data-id="${sku.id}">Сохранить</button>
         <button class="nav-btn" data-action="del-sku" data-id="${sku.id}">Удалить</button>
         <label class="nav-btn" style="cursor:pointer">
           Фото
@@ -187,7 +211,7 @@ function renderSkuCard(sku) {
         ${skuPhotoSrc(sku) ? `<img class="sku-photo" src="${escapeHtml(skuPhotoSrc(sku))}" alt="" />` : '<div class="sku-photo sku-photo-empty">нет фото</div>'}
         <div class="sku-info">
           <h3>${escapeHtml(sku.name)}</h3>
-          <div class="meta">${escapeHtml(sku.category || '')} · ${escapeHtml(sku.unit)} · ${sku.is_active === false ? 'неактивен' : 'активен'}</div>
+          <div class="meta">${escapeHtml(sku.category || '')} · ${escapeHtml(sku.unit)} · ${sku.is_active === false ? 'неактивен' : 'активен'}${sku.pending ? ' · ожидает синхронизации' : ''}</div>
           ${sku.description ? `<div class="meta">${escapeHtml(sku.description)}</div>` : ''}
           <div class="meta">Штрихкод: ${escapeHtml((sku.barcodes || [])[0] || 'не назначен')}</div>
         </div>
@@ -200,6 +224,7 @@ export function renderSkuPage(items, { searchQuery = '', allSkus = [] } = {}) {
   return `
     ${renderNewSkuPanel()}
     ${renderQrPrintPanel(allSkus)}
+    ${renderCategoryDatalist(allSkus)}
     <div class="card">
       <div class="form-row"><label>Поиск</label><input id="sku-search" placeholder="название, категория или штрихкод" value="${escapeHtml(searchQuery)}" autocomplete="off" /></div>
     </div>
@@ -208,12 +233,19 @@ export function renderSkuPage(items, { searchQuery = '', allSkus = [] } = {}) {
 }
 
 export function renderSkuResults(items) {
-  const selected = items.find((item) => item.id === pageState.selectedSkuId) || null;
-  const list = items.map((sku) => renderSkuCard(sku)).join('');
-  return `
-    ${selected ? renderSkuDetail(selected) : ''}
-    ${list || '<p class="empty">Нет SKU</p>'}
-  `;
+  const selectedId = pageState.selectedSkuId;
+  if (!items.length) {
+    return '<p class="empty">Нет SKU</p>';
+  }
+  return items.map((sku) => {
+    const card = renderSkuCard(sku);
+    const detail = sku.id === selectedId ? renderSkuDetail(sku) : '';
+    return `${card}${detail}`;
+  }).join('');
+}
+
+export function setSelectedSkuIdForTests(id) {
+  pageState.selectedSkuId = id;
 }
 
 function captureNewSkuDraftFromDom() {
@@ -232,6 +264,7 @@ function clearNewSkuDraft() {
     unit: 'шт',
     description: '',
   };
+  pageState.newSkuPhotoPreview = '';
 }
 
 function restoreFocus(activeId) {
@@ -258,7 +291,7 @@ function togglePanelExpanded(panelId) {
 export function bindSkuResultHandlers(root, { syncEngine, searchInput, refreshResults }) {
   root.querySelectorAll('[data-action="open-sku"]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      pageState.selectedSkuId = btn.dataset.id;
+      pageState.selectedSkuId = pageState.selectedSkuId === btn.dataset.id ? null : btn.dataset.id;
       await refreshResults(searchInput?.value.trim() || '');
     });
   });
@@ -282,11 +315,18 @@ export function bindSkuResultHandlers(root, { syncEngine, searchInput, refreshRe
     });
   });
 
-  root.querySelectorAll('[data-action="edit-sku"]').forEach((btn) => {
+  root.querySelectorAll('[data-action="save-sku"]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const name = prompt('Новое название SKU:');
+      const id = btn.dataset.id;
+      const name = document.getElementById(`sku-edit-name-${id}`)?.value.trim();
       if (!name) return;
-      await updateSKU(btn.dataset.id, { name });
+      await updateSKU(id, {
+        name,
+        category: document.getElementById(`sku-edit-category-${id}`)?.value.trim() || '',
+        unit: document.getElementById(`sku-edit-unit-${id}`)?.value.trim() || 'шт',
+        description: document.getElementById(`sku-edit-desc-${id}`)?.value.trim() || '',
+      });
+      syncEngine.sync();
       await refreshResults(searchInput?.value.trim() || '');
     });
   });
@@ -322,18 +362,31 @@ export function bindSkuPage(root, { syncEngine, onRefresh, onRefreshResults }) {
     });
   });
 
+  root.querySelector('#sku-photo')?.addEventListener('change', () => {
+    const input = root.querySelector('#sku-photo');
+    const file = input?.files?.[0];
+    if (!file) {
+      pageState.newSkuPhotoPreview = '';
+      return;
+    }
+    pageState.newSkuPhotoPreview = URL.createObjectURL(file);
+  });
+
   root.querySelector('#sku-create')?.addEventListener('click', async () => {
     captureNewSkuDraftFromDom();
     const { name, category, unit, description } = pageState.newSkuDraft;
     if (!name.trim()) return;
-    await createSKU({
+    const photoInput = root.querySelector('#sku-photo');
+    const photoFile = photoInput?.files?.[0] || null;
+    await createSKUWithPhoto({
       name: name.trim(),
       category: category.trim(),
       unit: unit.trim() || 'шт',
       description: description.trim(),
-    });
+    }, photoFile);
     pageState.newSkuExpanded = false;
     clearNewSkuDraft();
+    syncEngine.sync();
     await onRefresh();
   });
 
@@ -418,4 +471,5 @@ export function resetSkuPageStateForTests() {
     unit: 'шт',
     description: '',
   };
+  pageState.newSkuPhotoPreview = '';
 }

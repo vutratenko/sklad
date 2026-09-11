@@ -61,7 +61,7 @@ func main() {
 
 	catalogSvc := catalogapp.NewCatalogService(skuRepo)
 	moveSvc := moveapp.NewMovementService(adapter)
-	syncSvc := syncapp.NewSyncService(moveSvc, eventRepo)
+	syncSvc := syncapp.NewSyncService(moveSvc, eventRepo, catalogSvc)
 
 	mediaStorage, err := media.NewStorage(cfg.MediaDir)
 	if err != nil {

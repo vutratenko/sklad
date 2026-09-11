@@ -70,6 +70,8 @@
 html {
   min-height: 100%;
   background: var(--color-bg);
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -477,11 +479,13 @@ button.primary {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   background: var(--color-bg-elevated);
   color: var(--color-text-primary);
   box-shadow: var(--shadow-control);
+  font-size: max(16px, var(--font-size-md));
 }
 
 select {
@@ -565,6 +569,17 @@ button.primary:hover:not(:disabled) {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   text-transform: uppercase;
+}
+
+.sku-photo-preview {
+  margin-top: var(--space-2);
+}
+
+.sku-detail-card {
+  margin-top: calc(-1 * var(--space-2));
+  margin-bottom: var(--space-3);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .sku-info {

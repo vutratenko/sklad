@@ -24,11 +24,15 @@ func NewSKURepository(pool postgres.Pool) *SKURepository {
 
 func (r *SKURepository) Create(ctx context.Context, in domain.CreateSKUInput) (*domain.SKU, error) {
 	var sku domain.SKU
+	var idArg any
+	if in.ID != nil {
+		idArg = *in.ID
+	}
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO skus (name, description, category, photo_url, unit)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO skus (id, name, description, category, photo_url, unit)
+		VALUES (COALESCE($1, gen_random_uuid()), $2, $3, $4, $5, $6)
 		RETURNING id, name, description, category, photo_url, unit, is_active, created_at, updated_at
-	`, in.Name, in.Description, in.Category, in.PhotoURL, in.Unit).Scan(
+	`, idArg, in.Name, in.Description, in.Category, in.PhotoURL, in.Unit).Scan(
 		&sku.ID, &sku.Name, &sku.Description, &sku.Category, &sku.PhotoURL, &sku.Unit, &sku.IsActive, &sku.CreatedAt, &sku.UpdatedAt,
 	)
 	if err != nil {

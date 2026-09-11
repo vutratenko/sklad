@@ -126,9 +126,45 @@ export async function resetOpForRetry(op) {
   });
 }
 
-export async function applyOptimisticMovement(payload) {
+export async function applyOptimisticSku(payload) {
+  const now = new Date().toISOString();
+  await put('skus', {
+    id: payload.id,
+    name: payload.name,
+    category: payload.category || '',
+    unit: payload.unit || 'шт',
+    description: payload.description || '',
+    is_active: true,
+    barcodes: payload.barcodes || [],
+    photo_url: payload.photo_url || '',
+    photo_pending: !!payload.photo_pending,
+    pending: true,
+    created_at: now,
+    updated_at: now,
+  });
+}
+
+export async function applyOptimisticSkuUpdate(id, patch) {
+  const items = await getCachedSKUs();
+  const existing = items.find((item) => item.id === id);
+  if (!existing) return;
+  await put('skus', {
+    ...existing,
+    ...patch,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+export async function applyOptimisticMovement(payload, opId) {
   const line = payload.lines?.[0];
   if (!line) return;
+
+  if (opId) {
+    const movements = await getCachedMovements();
+    if (movements.some((m) => m.id === opId)) {
+      return;
+    }
+  }
 
   const qty = line.quantity;
   const skuId = line.sku_id;
@@ -156,7 +192,15 @@ export async function applyOptimisticMovement(payload) {
     const meta = locMeta(locationId);
     const existing = all.find((s) => s.sku_id === skuId && s.location_id === locationId);
     if (existing) {
-      existing.quantity = Math.max(0, (existing.quantity || 0) + delta);
+      const next = (existing.quantity || 0) + delta;
+      if (delta < 0 && next < 0) {
+        throw new Error('Недостаточно остатка для операции');
+      }
+      existing.quantity = Math.max(0, next);
+      if (existing.quantity <= 0) {
+        await removeStock(existing.id);
+        return;
+      }
       await put('stocks', existing);
       return;
     }
@@ -193,7 +237,7 @@ export async function applyOptimisticMovement(payload) {
   }
 
   await put('movements', {
-    id: `pending-${crypto.randomUUID()}`,
+    id: opId || `pending-${crypto.randomUUID()}`,
     operation_type: type,
     sku_id: skuId,
     sku_name: sku?.name || 'SKU',
@@ -206,10 +250,66 @@ export async function applyOptimisticMovement(payload) {
   });
 }
 
-export async function cacheStocks(items) {
-  for (const item of items) {
-    await put('stocks', { ...item, id: item.id || `${item.sku_id}-${item.location_id}` });
-  }
+export async function removeStock(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('stocks', 'readwrite');
+    t.objectStore('stocks').delete(id);
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+  });
+}
+
+/**
+ * Replace cached stock balances with server snapshot.
+ * API omits quantity=0 rows, so we must prune missing ids — otherwise
+ * depleted locations after transfer/issue inflate SKU totals.
+ *
+ * @param {Array} items
+ * @param {{ skuId?: string }} [opts] when skuId is set, prune only that SKU's rows
+ */
+function stockLocationKey(skuId, locationId) {
+  return `${skuId}\0${locationId}`;
+}
+
+export async function cacheStocks(items, opts = {}) {
+  const incoming = (items || []).map((item) => ({
+    ...item,
+    id: item.id || `${item.sku_id}-${item.location_id}`,
+  }));
+  const skuId = opts.skuId;
+  const keepIds = new Set(incoming.map((item) => item.id));
+  const incomingByLocation = new Map(
+    incoming.map((item) => [stockLocationKey(item.sku_id, item.location_id), item]),
+  );
+
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const t = db.transaction('stocks', 'readwrite');
+    const store = t.objectStore('stocks');
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const existing = req.result || [];
+      for (const old of existing) {
+        if (skuId && old.sku_id !== skuId) continue;
+        const locKey = stockLocationKey(old.sku_id, old.location_id);
+        const replacement = incomingByLocation.get(locKey);
+        if (replacement && replacement.id !== old.id) {
+          store.delete(old.id);
+          continue;
+        }
+        if (!keepIds.has(old.id)) {
+          store.delete(old.id);
+        }
+      }
+      for (const item of incoming) {
+        store.put(item);
+      }
+    };
+    req.onerror = () => reject(req.error);
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+  });
 }
 
 export async function cacheSKUs(items) {

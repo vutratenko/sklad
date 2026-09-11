@@ -21,12 +21,13 @@ type SKU struct {
 }
 
 type CreateSKUInput struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Category    string   `json:"category"`
-	PhotoURL    string   `json:"photo_url"`
-	Unit        string   `json:"unit"`
-	Barcodes    []string `json:"barcodes"`
+	ID          *uuid.UUID `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Category    string     `json:"category"`
+	PhotoURL    string     `json:"photo_url"`
+	Unit        string     `json:"unit"`
+	Barcodes    []string   `json:"barcodes"`
 }
 
 type UpdateSKUInput struct {

@@ -1,4 +1,11 @@
-import { apiFetch, apiUpload, db, queuePhotoUpload } from '../../infra/sync-engine.js';
+import {
+  apiFetch,
+  apiUpload,
+  db,
+  queuePhotoUpload,
+  queueSkuCreate,
+  queueSkuUpdate,
+} from '../../infra/sync-engine.js';
 import { compressPhotoForUpload } from '../photo-compress.js';
 import {
   cacheServerPhoto,
@@ -36,16 +43,56 @@ export async function loadSKUs(q = '', activeOnly = false) {
   return enrichSkusPhotos(filtered);
 }
 
+function buildSkuCreatePayload(data, id = crypto.randomUUID()) {
+  return {
+    id,
+    name: data.name,
+    category: data.category || '',
+    unit: data.unit || 'шт',
+    description: data.description || '',
+  };
+}
+
+async function getCachedSkuById(id) {
+  const items = await db.getCachedSKUs();
+  const sku = items.find((item) => item.id === id);
+  return sku ? enrichSkuPhoto(sku) : null;
+}
+
 export async function createSKU(data) {
-  const sku = await apiFetch('/skus', { method: 'POST', body: JSON.stringify(data) });
-  await db.putSKU(sku);
-  return enrichSkuPhoto(sku);
+  const payload = buildSkuCreatePayload(data);
+  await queueSkuCreate(payload);
+  return getCachedSkuById(payload.id);
+}
+
+export async function createSKUWithPhoto(data, file) {
+  const payload = buildSkuCreatePayload(data);
+  await queueSkuCreate(payload);
+
+  if (file) {
+    const prepared = await compressPhotoForUpload(file);
+    await saveLocalPhoto(payload.id, prepared, {
+      pendingUpload: true,
+      filename: prepared.name,
+      mimeType: prepared.type,
+    });
+    await queuePhotoUpload(payload.id);
+    const items = await db.getCachedSKUs();
+    const existing = items.find((item) => item.id === payload.id) || payload;
+    await db.putSKU({
+      ...existing,
+      photo_url: localPhotoUrl(payload.id),
+      photo_pending: true,
+      pending: true,
+    });
+  }
+
+  return getCachedSkuById(payload.id);
 }
 
 export async function updateSKU(id, data) {
-  const sku = await apiFetch(`/skus/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
-  await db.putSKU(sku);
-  return enrichSkuPhoto(sku);
+  await queueSkuUpdate(id, data);
+  return getCachedSkuById(id);
 }
 
 export async function deleteSKU(id) {
@@ -100,6 +147,11 @@ async function queuePhotoOffline(skuId, file) {
 
 export async function uploadPhoto(skuId, file) {
   const prepared = await compressPhotoForUpload(file);
+  const items = await db.getCachedSKUs();
+  const cached = items.find((item) => item.id === skuId);
+  if (cached?.pending) {
+    return queuePhotoOffline(skuId, prepared);
+  }
 
   if (navigator.onLine) {
     try {
@@ -129,7 +181,7 @@ export async function lookupBarcode(barcode) {
     try {
       const resp = await apiFetch(`/barcodes/${encodeURIComponent(code)}`, { timeoutMs: 2000 });
       if (resp.sku) await db.putSKU(resp.sku);
-      if (resp.stocks?.length) await db.cacheStocks(resp.stocks);
+      if (resp.sku) await db.cacheStocks(resp.stocks || [], { skuId: resp.sku.id });
       if (resp.sku?.photo_url) await cacheServerPhoto(resp.sku.id, resp.sku.photo_url);
       return {
         ...resp,
@@ -176,7 +228,7 @@ export async function lookupSKU(skuId) {
       if (sku.photo_url) await cacheServerPhoto(sku.id, sku.photo_url);
       const stocksResp = await apiFetch(`/stocks?sku_id=${encodeURIComponent(id)}`, { timeoutMs: 2000 });
       const stocks = stocksResp.items || [];
-      if (stocks.length) await db.cacheStocks(stocks);
+      await db.cacheStocks(stocks, { skuId: id });
       return {
         barcode: (sku.barcodes || [])[0] || id,
         sku: await enrichSkuPhoto(sku),

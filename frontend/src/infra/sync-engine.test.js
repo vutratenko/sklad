@@ -7,11 +7,26 @@ const dbMock = vi.hoisted(() => ({
   cacheWarehouses: vi.fn(),
   cacheLocations: vi.fn(),
   getSyncOps: vi.fn(async () => []),
+  getPendingOps: vi.fn(async () => []),
+  enqueueOp: vi.fn(),
+  applyOptimisticMovement: vi.fn(),
+  applyOptimisticSku: vi.fn(),
+  applyOptimisticSkuUpdate: vi.fn(),
+  removeOp: vi.fn(),
+  updateOp: vi.fn(),
+  setMeta: vi.fn(),
+  getMeta: vi.fn(async () => 0),
+  getLocalPhoto: vi.fn(async () => null),
 }));
 
 vi.mock('./indexeddb.js', () => dbMock);
 vi.mock('./auth.js', () => ({ authHeaders: () => ({}) }));
-vi.mock('../app/photo-store.js', () => ({ prefetchSkuPhotos: vi.fn() }));
+vi.mock('../app/photo-store.js', () => ({
+  prefetchSkuPhotos: vi.fn(),
+  getLocalPhotoRecord: vi.fn(async () => null),
+  cacheServerPhoto: vi.fn(),
+  markLocalPhotoSynced: vi.fn(),
+}));
 
 function okJson(body, { status = 200 } = {}) {
   const text = body == null ? '' : JSON.stringify(body);
@@ -69,5 +84,82 @@ describe('SyncEngine', () => {
     fetch.mockResolvedValueOnce(okJson(null, { status: 204 }));
 
     await expect(apiFetch('/locations/loc-1', { method: 'DELETE' })).resolves.toBeNull();
+  });
+
+  it('sync pushes sku ops before photos', async () => {
+    const pushSpy = vi.fn();
+    const pushPhotosSpy = vi.fn();
+    const { SyncEngine } = await import('./sync-engine.js');
+    const engine = new SyncEngine();
+    engine.push = pushSpy;
+    engine.pushPhotos = pushPhotosSpy;
+    engine.pull = vi.fn();
+
+    await engine.sync();
+
+    expect(pushSpy.mock.invocationCallOrder[0]).toBeLessThan(pushPhotosSpy.mock.invocationCallOrder[0]);
+  });
+
+  it('pushPhotos skips photo upload while sku create is pending', async () => {
+    dbMock.getSyncOps.mockResolvedValueOnce([
+      {
+        opId: 'sku-op',
+        entityType: 'sku',
+        action: 'create',
+        status: 'pending',
+        payload: { id: 'sku-1' },
+      },
+      {
+        opId: 'photo-op',
+        entityType: 'sku_photo',
+        action: 'upload',
+        status: 'pending',
+        payload: { sku_id: 'sku-1' },
+      },
+    ]);
+    const { getLocalPhotoRecord } = await import('../app/photo-store.js');
+    getLocalPhotoRecord.mockResolvedValue({
+      blob: new Blob(['x'], { type: 'image/jpeg' }),
+      pendingUpload: true,
+      filename: 'sku-1.jpg',
+      mimeType: 'image/jpeg',
+    });
+
+    const { SyncEngine } = await import('./sync-engine.js');
+    const engine = new SyncEngine();
+    await engine.pushPhotos();
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('queueSkuCreate enqueues sku create and applies optimistic cache', async () => {
+    const { queueSkuCreate } = await import('./sync-engine.js');
+    await queueSkuCreate({ id: 'sku-1', name: 'Tomato' });
+    expect(dbMock.enqueueOp).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: 'sku',
+      action: 'create',
+      payload: { id: 'sku-1', name: 'Tomato' },
+    }));
+    expect(dbMock.applyOptimisticSku).toHaveBeenCalledWith({ id: 'sku-1', name: 'Tomato' });
+  });
+
+  it('queueMovement uses opId as idempotency key and applies optimistic update once', async () => {
+    const { queueMovement } = await import('./sync-engine.js');
+    dbMock.enqueueOp.mockResolvedValue(undefined);
+    dbMock.applyOptimisticMovement.mockResolvedValue(undefined);
+
+    const opId = await queueMovement({
+      operation_type: 'transfer',
+      lines: [{ sku_id: 'sku-1', quantity: 1, from_location_id: 'a', to_location_id: 'b' }],
+    });
+
+    expect(typeof opId).toBe('string');
+    expect(dbMock.enqueueOp).toHaveBeenCalledTimes(1);
+    const enqueued = dbMock.enqueueOp.mock.calls[0][0];
+    expect(enqueued.idempotencyKey).toBe(enqueued.opId);
+    expect(dbMock.applyOptimisticMovement).toHaveBeenCalledWith(
+      expect.objectContaining({ operation_type: 'transfer' }),
+      enqueued.opId,
+    );
   });
 });

@@ -340,7 +340,21 @@ func (h *Handlers) createMovement(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, err)
 		return
 	}
-	hash := moveapp.HashPayload(req)
+	hashLines := make([]moveapp.MovementHashLine, 0, len(req.Lines))
+	for _, l := range req.Lines {
+		line := moveapp.MovementHashLine{SKUID: l.SKUID, Quantity: l.Quantity}
+		if l.LotID != nil {
+			line.LotID = l.LotID
+		}
+		if l.FromLocationID != nil {
+			line.FromLocationID = l.FromLocationID
+		}
+		if l.ToLocationID != nil {
+			line.ToLocationID = l.ToLocationID
+		}
+		hashLines = append(hashLines, line)
+	}
+	hash := moveapp.HashMovementBusiness(req.OperationType, req.ReasonCode, hashLines)
 	lines := make([]movedomain.MovementLine, 0, len(req.Lines))
 	for _, l := range req.Lines {
 		skuID, _ := uuid.Parse(l.SKUID)

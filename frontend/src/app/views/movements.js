@@ -1,4 +1,4 @@
-import { apiFetch, db, getDeviceId, queueMovement } from '../../infra/sync-engine.js';
+import { db, queueMovement } from '../../infra/sync-engine.js';
 
 export async function loadMovements(filters = {}) {
   let items = await db.getCachedMovements();
@@ -18,34 +18,13 @@ export async function submitMovement(data) {
     from_location_id: data.from_location_id || null,
     to_location_id: data.to_location_id || null,
   };
-  const operationKey = crypto.randomUUID();
 
-  if (navigator.onLine) {
-    const payload = {
-      operation_type: data.operation_type,
-      reason_code: data.reason_code || '',
-      device_id: getDeviceId(),
-      operation_key: operationKey,
-      lines: [line],
-    };
-    const res = await apiFetch('/movements', { method: 'POST', body: JSON.stringify(payload) });
-    try {
-      const stocks = await apiFetch('/stocks');
-      await db.cacheStocks(stocks.items || []);
-      const movements = await apiFetch('/movements');
-      await db.cacheMovements(movements.items || []);
-    } catch {
-      // ignore refresh errors
-    }
-    return res;
-  }
-
-  await queueMovement({
+  const opId = await queueMovement({
     operation_type: data.operation_type,
     reason_code: data.reason_code || '',
     lines: [line],
   });
-  return { queued: true, operation_key: operationKey };
+  return { queued: true, operation_key: opId, opId };
 }
 
 export const OPERATION_TYPES = [

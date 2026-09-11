@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { filterSkusForQrSearch, renderSkuPage, resetSkuPageStateForTests } from './sku-page.js';
+import {
+  filterSkusForQrSearch,
+  renderSkuPage,
+  renderSkuResults,
+  resetSkuPageStateForTests,
+  setSelectedSkuIdForTests,
+} from './sku-page.js';
 
 const sampleSkus = [
   {
@@ -53,5 +59,33 @@ describe('sku page', () => {
     const html = renderSkuPage(sampleSkus, { allSkus: sampleSkus });
     expect(html).toContain('id="sku-results"');
     expect(html).toContain('sku-new-panel');
+  });
+
+  it('renders new SKU photo input and category datalist', () => {
+    const html = renderSkuPage(sampleSkus, { allSkus: sampleSkus });
+    expect(html).toContain('id="sku-photo"');
+    expect(html).toContain('list="sku-category-options"');
+    expect(html).toContain('<datalist id="sku-category-options">');
+    expect(html).toContain('value="консервы"');
+    expect(html).toContain('value="бакалея"');
+  });
+
+  it('renders selected SKU detail after its card, not before the list', () => {
+    setSelectedSkuIdForTests('sku-1');
+    const html = renderSkuResults(sampleSkus);
+    const firstCard = html.indexOf('data-id="sku-1"');
+    const detail = html.indexOf('id="sku-detail-sku-1"');
+    const secondCard = html.indexOf('data-id="sku-2"');
+    expect(firstCard).toBeGreaterThan(-1);
+    expect(detail).toBeGreaterThan(firstCard);
+    expect(secondCard).toBeGreaterThan(detail);
+  });
+
+  it('renders inline edit fields with category input in detail panel', () => {
+    setSelectedSkuIdForTests('sku-1');
+    const html = renderSkuResults(sampleSkus);
+    expect(html).toContain('id="sku-edit-category-sku-1"');
+    expect(html).toContain('data-action="save-sku"');
+    expect(html).not.toContain('data-action="edit-sku"');
   });
 });

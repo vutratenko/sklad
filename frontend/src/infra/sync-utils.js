@@ -17,3 +17,7 @@ export function isOpReadyForPush(op, nowMs = Date.now()) {
 export function backoffMs(attempt) {
   return Math.min(300000, 2000 * 2 ** attempt);
 }
+
+export function sortOpsForPush(ops) {
+  return [...ops].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+}

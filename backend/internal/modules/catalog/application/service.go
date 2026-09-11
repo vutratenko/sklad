@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -20,6 +21,16 @@ func NewCatalogService(repo catalogdomain.Repository) *CatalogService {
 func (s *CatalogService) Create(ctx context.Context, in catalogdomain.CreateSKUInput) (*catalogdomain.SKU, error) {
 	if strings.TrimSpace(in.Name) == "" {
 		return nil, apperr.Validation("name is required")
+	}
+	if in.ID != nil {
+		existing, err := s.repo.GetByID(ctx, *in.ID)
+		if err == nil {
+			return existing, nil
+		}
+		var ae *apperr.AppError
+		if !errors.As(err, &ae) || ae.Code != "NOT_FOUND" {
+			return nil, err
+		}
 	}
 	in.Unit = defaultStr(in.Unit, "шт")
 	barcode, err := s.repo.NextBarcode(ctx)

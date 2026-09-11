@@ -491,6 +491,8 @@ function bindWizardStepHandlers(root, skus, locations, stocks = wizardStocks) {
   root.querySelector('#mv-adj-dir')?.addEventListener('change', () => updateDetailsVisibility(root, stocks, locations));
   root.querySelector('#mv-submit')?.addEventListener('click', async () => {
     if (!onSubmit) return;
+    const submitBtn = root.querySelector('#mv-submit');
+    if (submitBtn?.disabled) return;
     const resultEl = root.querySelector('#mv-result');
     const type = wizardState.operationType;
     const skuId = wizardState.skuId;
@@ -531,12 +533,15 @@ function bindWizardStepHandlers(root, skus, locations, stocks = wizardStocks) {
       if (resultEl) resultEl.textContent = 'Укажите место корректировки';
       return;
     }
+    if (submitBtn) submitBtn.disabled = true;
     try {
       await onSubmit(data, resultEl);
       resetWizardState();
       rerenderWizard(root, skus, locations, stocks);
     } catch (err) {
       if (resultEl) resultEl.textContent = err.message;
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 }

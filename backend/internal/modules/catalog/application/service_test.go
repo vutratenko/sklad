@@ -16,8 +16,12 @@ type fakeRepo struct {
 }
 
 func (f *fakeRepo) Create(_ context.Context, in catalogdomain.CreateSKUInput) (*catalogdomain.SKU, error) {
+	id := uuid.New()
+	if in.ID != nil {
+		id = *in.ID
+	}
 	sku := &catalogdomain.SKU{
-		ID:          uuid.New(),
+		ID:          id,
 		Name:        in.Name,
 		Description: in.Description,
 		Category:    in.Category,
@@ -190,6 +194,57 @@ func TestAddBarcode_RejectsSecondBarcode(t *testing.T) {
 	_, err = svc.AddBarcode(context.Background(), sku.ID.String(), "456")
 	if err == nil {
 		t.Fatal("expected validation error for second barcode")
+	}
+}
+
+func TestCreateSKU_WithClientID(t *testing.T) {
+	repo := &fakeRepo{skus: map[uuid.UUID]*catalogdomain.SKU{}, barcodes: map[string]uuid.UUID{}}
+	svc := catalogapp.NewCatalogService(repo)
+	clientID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+
+	sku, err := svc.Create(context.Background(), catalogdomain.CreateSKUInput{
+		ID:   &clientID,
+		Name: "Offline SKU",
+		Unit: "шт",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sku.ID != clientID {
+		t.Fatalf("expected client id %s, got %s", clientID, sku.ID)
+	}
+	if len(sku.Barcodes) != 1 || sku.Barcodes[0] != "000001" {
+		t.Fatalf("expected single auto barcode, got %#v", sku.Barcodes)
+	}
+}
+
+func TestCreateSKU_IdempotentWithSameClientID(t *testing.T) {
+	repo := &fakeRepo{skus: map[uuid.UUID]*catalogdomain.SKU{}, barcodes: map[string]uuid.UUID{}}
+	svc := catalogapp.NewCatalogService(repo)
+	clientID := uuid.MustParse("22222222-2222-4222-8222-222222222222")
+
+	first, err := svc.Create(context.Background(), catalogdomain.CreateSKUInput{
+		ID:   &clientID,
+		Name: "First",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.Create(context.Background(), catalogdomain.CreateSKUInput{
+		ID:   &clientID,
+		Name: "Second attempt",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("expected same id, got %s vs %s", first.ID, second.ID)
+	}
+	if second.Name != "First" {
+		t.Fatalf("expected original name preserved, got %q", second.Name)
+	}
+	if len(second.Barcodes) != 1 {
+		t.Fatalf("expected one barcode, got %#v", second.Barcodes)
 	}
 }
 

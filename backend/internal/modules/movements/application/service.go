@@ -39,6 +39,29 @@ func HashPayload(v any) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// MovementHashLine is the canonical business payload line for idempotency hashing.
+type MovementHashLine struct {
+	SKUID          string  `json:"sku_id"`
+	LotID          *string `json:"lot_id,omitempty"`
+	Quantity       int     `json:"quantity"`
+	FromLocationID *string `json:"from_location_id,omitempty"`
+	ToLocationID   *string `json:"to_location_id,omitempty"`
+}
+
+type movementHashBody struct {
+	OperationType string             `json:"operation_type"`
+	ReasonCode    string             `json:"reason_code"`
+	Lines         []MovementHashLine `json:"lines"`
+}
+
+func HashMovementBusiness(operationType, reasonCode string, lines []MovementHashLine) string {
+	return HashPayload(movementHashBody{
+		OperationType: operationType,
+		ReasonCode:    reasonCode,
+		Lines:         lines,
+	})
+}
+
 func (s *MovementService) Apply(ctx context.Context, in domain.ApplyMovementInput) (*ApplyResult, error) {
 	if err := domain.ValidateMovementInput(in); err != nil {
 		return nil, apperr.Validation(err.Error())
@@ -50,25 +73,6 @@ func (s *MovementService) Apply(ctx context.Context, in domain.ApplyMovementInpu
 	}
 	defer tx.Rollback(ctx)
 
-	var existingID uuid.UUID
-	var existingHash string
-	err = tx.QueryRow(ctx, `
-		SELECT id, payload_hash FROM operations
-		WHERE source_device_id = $1 AND operation_key = $2
-	`, in.DeviceID, in.OperationKey).Scan(&existingID, &existingHash)
-	if err == nil {
-		if existingHash != in.PayloadHash {
-			return nil, apperr.IdempotencyMismatch()
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return nil, err
-		}
-		return &ApplyResult{OperationID: existingID, Applied: false}, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
-	}
-
 	effectiveAt := in.EffectiveAt
 	if effectiveAt.IsZero() {
 		effectiveAt = time.Now().UTC()
@@ -78,8 +82,27 @@ func (s *MovementService) Apply(ctx context.Context, in domain.ApplyMovementInpu
 	err = tx.QueryRow(ctx, `
 		INSERT INTO operations (operation_type, reason_code, source_device_id, operation_key, payload_hash, created_by, effective_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (source_device_id, operation_key) DO NOTHING
 		RETURNING id
 	`, in.OperationType, nullStr(in.ReasonCode), in.DeviceID, in.OperationKey, in.PayloadHash, in.CreatedBy, effectiveAt).Scan(&opID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var existingID uuid.UUID
+		var existingHash string
+		err = tx.QueryRow(ctx, `
+			SELECT id, payload_hash FROM operations
+			WHERE source_device_id = $1 AND operation_key = $2
+		`, in.DeviceID, in.OperationKey).Scan(&existingID, &existingHash)
+		if err != nil {
+			return nil, err
+		}
+		if existingHash != in.PayloadHash {
+			return nil, apperr.IdempotencyMismatch()
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return &ApplyResult{OperationID: existingID, Applied: false}, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("insert operation: %w", err)
 	}
